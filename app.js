@@ -5,6 +5,16 @@ const SAVE_KEY = "sugoroku-backpack-battle-save";
 const ONLINE_CONFIG_KEY = "sugoroku-firebase-config";
 const ONLINE_SEAT_KEY = "sugoroku-online-seat";
 const FIREBASE_SDK_VERSION = "10.12.5";
+const DEFAULT_FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCXyreqDjZXIWnZqWZShw1yjwubHduqCoc",
+  authDomain: "createcardgame-8edbf.firebaseapp.com",
+  databaseURL: "https://createcardgame-8edbf-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "createcardgame-8edbf",
+  storageBucket: "createcardgame-8edbf.firebasestorage.app",
+  messagingSenderId: "173024784980",
+  appId: "1:173024784980:web:606d80ee258239d656f3c1",
+  measurementId: "G-DDB5KGS7K3",
+};
 
 const rarityOrder = ["white", "green", "blue", "purple", "gold"];
 const rarityNames = {
@@ -499,7 +509,9 @@ function currentPlayer() {
 }
 
 function init() {
-  els.firebaseConfigInput.value = localStorage.getItem(ONLINE_CONFIG_KEY) || "";
+  els.firebaseConfigInput.value =
+    localStorage.getItem(ONLINE_CONFIG_KEY) ||
+    JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
   if (online.playerId) els.seatSelect.value = String(online.playerId);
   renderSetup();
   renderBoard();
@@ -1217,8 +1229,8 @@ function leaveOnlineRoom() {
 
 async function setupOnlineFirebase() {
   const configText = els.firebaseConfigInput.value.trim();
-  if (!configText) throw new Error("Firebase の Web 設定を貼り付けてください。");
-  localStorage.setItem(ONLINE_CONFIG_KEY, configText);
+  const firebaseConfig = configText ? parseFirebaseConfig(configText) : DEFAULT_FIREBASE_CONFIG;
+  if (configText) localStorage.setItem(ONLINE_CONFIG_KEY, configText);
   if (!online.modules) {
     const appModule = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`);
     const authModule = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`);
@@ -1227,7 +1239,7 @@ async function setupOnlineFirebase() {
   }
   if (!online.app) {
     const { initializeApp, getAuth, signInAnonymously, getFirestore } = online.modules;
-    online.app = initializeApp(parseFirebaseConfig(configText));
+    online.app = initializeApp(firebaseConfig);
     online.auth = getAuth(online.app);
     online.db = getFirestore(online.app);
     await signInAnonymously(online.auth);
