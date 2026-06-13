@@ -654,8 +654,9 @@ function bindEvents() {
     }
     state.boardSize = clamp(Number(els.boardSizeInput.value), MIN_BOARD_SIZE, MAX_BOARD_SIZE);
     state.board = createBoardPattern(state.boardSize);
+    els.boardSizeValue.textContent = `${state.boardSize}マス`;
     markChanged();
-    renderAll();
+    renderBoard();
   });
 
   els.startGameButton.addEventListener("click", startOrderPhase);
@@ -685,7 +686,7 @@ function bindEvents() {
     localStorage.setItem(ONLINE_CONFIG_KEY, els.firebaseConfigInput.value.trim());
   });
   els.roomCodeInput.addEventListener("input", () => {
-    els.roomCodeInput.value = els.roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    els.roomCodeInput.value = els.roomCodeInput.value.replace(/\D/g, "").slice(0, 4);
   });
 }
 
@@ -843,12 +844,14 @@ function advanceTurn() {
   if (alive.length < 2) {
     state.phase = "gameover";
     addLog(`${alive[0]?.name || "最後のプレイヤー"} が勝者です。`);
+    markChanged();
     renderAll();
     return;
   }
   state.currentIndex = (state.currentIndex + 1) % alive.length;
   beginTurn();
   renderAll();
+  markChanged();
 }
 
 function maybeTriggerEvent() {
@@ -1166,8 +1169,6 @@ function finishBattle() {
 }
 
 function continueAfterBattle() {
-  const player = currentPlayer();
-  if (player && !requirePlayerControl(player)) return;
   state.battle = null;
   state.phase = "turn";
   markChanged();
@@ -1264,6 +1265,7 @@ function removePlacedItem(uidValue) {
 
 function renderAll() {
   renderOnline();
+  if (state.phase === "setup") renderSetup();
   renderSetupVisibility();
   renderBoard();
   renderPlayers();
@@ -1286,6 +1288,7 @@ function renderOnline() {
     els.onlineStatus.textContent = "未接続";
   }
   els.seatSelect.value = online.playerId ? String(online.playerId) : "";
+  els.seatSelect.disabled = online.enabled;
 }
 
 async function createOnlineRoom() {
@@ -1295,7 +1298,7 @@ async function createOnlineRoom() {
     online.isHost = true;
     online.enabled = true;
     online.ready = true;
-    online.playerId = online.playerId || 1;
+    online.playerId = 1;
     els.seatSelect.value = String(online.playerId);
     localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
     const { doc, setDoc, serverTimestamp } = online.modules;
@@ -1304,6 +1307,7 @@ async function createOnlineRoom() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       hostId: online.clientId,
+      seats: { [online.clientId]: 1 },
       state: structuredCloneForSync(state),
       updatedBy: online.clientId,
     });
@@ -1320,25 +1324,27 @@ async function joinOnlineRoom() {
     await setupOnlineFirebase();
     const roomId = els.roomCodeInput.value.trim().toUpperCase();
     if (!roomId) throw new Error("部屋コードを入力してください。");
-    const { doc, getDoc } = online.modules;
+    const { doc } = online.modules;
     online.roomRef = doc(online.db, "sugorokuRooms", roomId);
-    const snapshot = await getDoc(online.roomRef);
-    if (!snapshot.exists()) throw new Error("部屋が見つかりません。");
-    const data = snapshot.data();
+    const data = await claimOnlineSeat();
     online.roomId = roomId;
     online.isHost = data.hostId === online.clientId;
     online.enabled = true;
     online.ready = true;
+    online.playerId = data.playerId;
+    if (online.playerId) localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
+    else localStorage.removeItem(ONLINE_SEAT_KEY);
     if (data.state) applyRemoteState(data.state);
     subscribeOnlineRoom();
-    setOnlineStatus(`部屋 ${roomId} に参加しました。`);
+    setOnlineStatus(online.playerId ? `部屋 ${roomId} に P${online.playerId} として参加しました。` : `部屋 ${roomId} に観戦で参加しました。`);
     renderAll();
   } catch (error) {
     setOnlineStatus(`参加失敗: ${error.message}`);
   }
 }
 
-function leaveOnlineRoom() {
+async function leaveOnlineRoom() {
+  await releaseOnlineSeat();
   if (online.unsubscribe) online.unsubscribe();
   online.unsubscribe = null;
   online.enabled = false;
@@ -1350,6 +1356,50 @@ function leaveOnlineRoom() {
   clearBattleLoops();
   setOnlineStatus("退出しました。");
   renderAll();
+}
+
+async function claimOnlineSeat() {
+  const { runTransaction } = online.modules;
+  let result = null;
+  await runTransaction(online.db, async (transaction) => {
+    const snapshot = await transaction.get(online.roomRef);
+    if (!snapshot.exists()) throw new Error("部屋が見つかりません。");
+    const data = snapshot.data();
+    const seats = data.seats || {};
+    const maxPlayers = clamp(Number(data.state?.setupCount) || 4, 2, 4);
+    let playerId = Number(seats[online.clientId]) || null;
+    if (!playerId) {
+      const used = new Set(Object.values(seats).map((value) => Number(value)));
+      for (let index = 1; index <= maxPlayers; index += 1) {
+        if (!used.has(index)) {
+          playerId = index;
+          break;
+        }
+      }
+      if (playerId) {
+        transaction.set(online.roomRef, { seats: { ...seats, [online.clientId]: playerId } }, { merge: true });
+      }
+    }
+    result = { ...data, playerId };
+  });
+  return result;
+}
+
+async function releaseOnlineSeat() {
+  if (!online.enabled || !online.roomRef || !online.modules) return;
+  try {
+    const { runTransaction } = online.modules;
+    await runTransaction(online.db, async (transaction) => {
+      const snapshot = await transaction.get(online.roomRef);
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      const seats = { ...(data.seats || {}) };
+      delete seats[online.clientId];
+      transaction.set(online.roomRef, { seats }, { merge: true });
+    });
+  } catch (error) {
+    setOnlineStatus(`退出時の席解除に失敗: ${error.message}`);
+  }
 }
 
 async function setupOnlineFirebase() {
@@ -1407,9 +1457,8 @@ function setOnlineStatus(text) {
 }
 
 function makeRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
-  for (let index = 0; index < 6; index += 1) code += chars[rand(0, chars.length - 1)];
+  for (let index = 0; index < 4; index += 1) code += String(rand(0, 9));
   return code;
 }
 
@@ -1458,7 +1507,9 @@ function structuredCloneForSync(value) {
 }
 
 function renderSetupVisibility() {
-  document.body.classList.toggle("prep-view", state.phase === "setup" || state.phase === "order");
+  const prepView = state.phase === "setup" || state.phase === "order";
+  document.body.classList.toggle("prep-view", prepView);
+  document.body.classList.toggle("game-view", !prepView);
   els.setupPanel.classList.toggle("hidden", state.phase !== "setup");
 }
 
@@ -1603,7 +1654,7 @@ function renderTurn() {
 
   if (state.phase === "battleResult") {
     els.turnTitle.textContent = "戦闘結果";
-    els.actionArea.append(actionButton("次のプレイヤーへ", "primary-button", continueAfterBattle, player && !canControlPlayer(player)));
+    els.actionArea.append(actionButton("次のプレイヤーへ", "primary-button", continueAfterBattle));
     return;
   }
 
@@ -1734,10 +1785,11 @@ function renderSelectedDetail(player) {
 }
 
 function renderShop() {
-  els.shopPanel.classList.toggle("hidden", !["shop", "forge"].includes(state.phase));
-  els.shopContent.innerHTML = "";
   const player = currentPlayer();
-  if (!player) return;
+  const visible = ["shop", "forge"].includes(state.phase) && (!online.enabled || canControlPlayer(player));
+  els.shopPanel.classList.toggle("hidden", !visible);
+  els.shopContent.innerHTML = "";
+  if (!player || !visible) return;
 
   if (state.phase === "shop") {
     els.shopTitle.textContent = "ショップ";
