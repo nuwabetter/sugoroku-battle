@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --bg: #f4f7f1;
-  --ink: #18231f;
-  --muted: #62706a;
-  --line: #ccd8d0;
+  --bg: #fff9d7;
+  --ink: #2e2616;
+  --muted: #806f45;
+  --line: #eadb8a;
   --panel: #ffffff;
-  --panel-soft: #f8fbf7;
-  --accent: #137c6b;
-  --accent-2: #d4453f;
-  --accent-3: #d79d24;
-  --shadow: 0 12px 30px rgba(20, 34, 28, 0.1);
+  --panel-soft: #fffdf0;
+  --accent: #f4b000;
+  --accent-2: #e1533d;
+  --accent-3: #3d9a72;
+  --shadow: 0 10px 0 rgba(46, 38, 22, 0.12);
   --radius: 8px;
   --white: #e9ecef;
   --green: #3ca370;
@@ -26,9 +26,10 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    linear-gradient(135deg, rgba(19, 124, 107, 0.1), transparent 26%),
-    linear-gradient(315deg, rgba(212, 69, 63, 0.08), transparent 32%),
+    radial-gradient(circle at 12px 12px, rgba(244, 176, 0, 0.22) 0 4px, transparent 5px),
+    radial-gradient(circle at 36px 36px, rgba(255, 255, 255, 0.9) 0 5px, transparent 6px),
     var(--bg);
+  background-size: 48px 48px;
   color: var(--ink);
   font-family:
     "Yu Gothic UI", "Meiryo", system-ui, -apple-system, BlinkMacSystemFont,
@@ -92,15 +93,41 @@ h2 {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(420px, 1.25fr) minmax(360px, 0.9fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(480px, 1.45fr) minmax(360px, 0.85fr) minmax(320px, 0.75fr);
   gap: 16px;
   align-items: start;
 }
 
+body.prep-view .layout {
+  max-width: 980px;
+  grid-template-columns: 1fr;
+  margin: 0 auto;
+}
+
+body.prep-view .board-column,
+body.prep-view .status-panel,
+body.prep-view .backpack-panel,
+body.prep-view .shop-panel,
+body.prep-view .battle-panel,
+body.prep-view .log-panel,
+body.prep-view .side-column {
+  display: none;
+}
+
+body.prep-view .control-column {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+  gap: 16px;
+}
+
+body.prep-view .turn-panel {
+  grid-column: 1 / -1;
+}
+
 .panel,
 .board-column {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(204, 216, 208, 0.9);
+  background: rgba(255, 255, 255, 0.96);
+  border: 3px solid #2e2616;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -190,12 +217,15 @@ h2 {
 .primary-button {
   width: 100%;
   background: var(--accent);
-  color: #fff;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 0 4px 0 rgba(46, 38, 22, 0.18);
 }
 
 .secondary-button {
-  background: #e8f1ee;
-  color: var(--accent);
+  background: #fff3a9;
+  color: var(--ink);
+  border: 2px solid var(--ink);
 }
 
 .danger-button {
@@ -261,7 +291,7 @@ h2 {
 
 .name-fields label {
   display: grid;
-  grid-template-columns: 68px 1fr;
+  grid-template-columns: 68px 1fr 72px;
   align-items: center;
   gap: 8px;
   color: var(--muted);
@@ -321,74 +351,107 @@ textarea {
   margin-top: 10px;
 }
 
+.online-panel textarea {
+  display: none;
+}
+
 .board-wrap {
   margin-top: 14px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 0 18px;
+  scroll-behavior: smooth;
 }
 
 .board-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(58px, 1fr));
-  gap: 8px;
-  min-width: 520px;
+  display: flex;
+  min-width: max-content;
+  gap: 26px;
+  align-items: center;
+  padding: 18px 20px;
 }
 
 .space {
   position: relative;
-  min-height: 70px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  padding: 7px;
+  display: grid;
+  width: 92px;
+  height: 92px;
+  flex: 0 0 92px;
+  place-items: center;
+  overflow: visible;
+  border: 4px solid #2e2616;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 28% 25%, rgba(255, 255, 255, 0.9) 0 12px, transparent 13px),
+    var(--space-color);
+  padding: 8px;
+  color: #fff;
+  box-shadow: 0 7px 0 rgba(46, 38, 22, 0.18);
 }
 
 .space::before {
   content: "";
   position: absolute;
-  inset: 0;
-  border-top: 5px solid var(--space-color);
-  opacity: 0.95;
+  left: calc(100% + 3px);
+  top: 50%;
+  width: 24px;
+  height: 8px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: #2e2616;
+  opacity: 0.25;
+}
+
+.space:last-child::before {
+  display: none;
+}
+
+.space.active-space {
+  outline: 6px solid #fff2a7;
+  transform: translateY(-6px);
 }
 
 .space-number {
   position: relative;
   z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
+  display: block;
+  color: rgba(255, 255, 255, 0.95);
   font-size: 11px;
   font-weight: 900;
+  text-align: center;
 }
 
 .space-name {
   position: relative;
   z-index: 1;
-  margin-top: 14px;
-  font-size: 12px;
+  margin-top: 0;
+  max-width: 74px;
+  font-size: 11px;
   font-weight: 900;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(46, 38, 22, 0.45);
 }
 
 .tokens {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
+  right: -8px;
+  bottom: -8px;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 3px;
-  max-width: 44px;
+  max-width: 70px;
 }
 
 .token {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 30px;
+  height: 30px;
   place-items: center;
-  border: 2px solid #fff;
+  border: 3px solid #fff;
   border-radius: 50%;
-  color: #fff;
-  font-size: 10px;
+  color: #2e2616;
+  font-size: 17px;
   font-weight: 900;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
 }
@@ -448,6 +511,17 @@ textarea {
   height: 12px;
   border-radius: 50%;
   background: var(--player-color);
+}
+
+.avatar-dot {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 3px 0 rgba(46, 38, 22, 0.18);
+  font-size: 18px;
 }
 
 .stats {
@@ -551,9 +625,21 @@ textarea {
 }
 
 .item-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 13px;
   font-weight: 900;
   line-height: 1.25;
+}
+
+.item-icon,
+.cell-icon {
+  display: inline-grid;
+  min-width: 22px;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .item-meta {
@@ -609,6 +695,10 @@ textarea {
   font-size: 10px;
   line-height: 1.1;
   text-align: center;
+}
+
+.cell-icon {
+  margin: 0 auto 2px;
 }
 
 .item-detail {

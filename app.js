@@ -47,6 +47,7 @@ const spaceTypes = {
 };
 
 const playerColors = ["#d4453f", "#137c6b", "#3278c6", "#8758b8"];
+const avatarOptions = ["😀", "😎", "🤠", "🧙", "🥷", "🤖", "👑", "⭐", "🍀", "🔥", "⚡", "🎲"];
 
 const itemCatalog = [
   {
@@ -230,6 +231,23 @@ const itemCatalog = [
   },
 ];
 
+const itemIcons = {
+  rusty_sword: "🗡️",
+  coin_pouch: "💰",
+  wooden_shield: "🛡️",
+  quick_dagger: "🔪",
+  herb_kit: "🌿",
+  poison_vial: "🧪",
+  iron_axe: "🪓",
+  focus_lens: "🔍",
+  silver_bank: "🏦",
+  storm_staff: "🌩️",
+  hex_charm: "🔮",
+  royal_banner: "🚩",
+  sun_blade: "☀️",
+  dragon_heart: "💎",
+};
+
 const boardPattern = [
   "start",
   "plus",
@@ -274,9 +292,9 @@ const boardPattern = [
 ];
 
 const randomSpaceWeights = [
-  ["plus", 46],
+  ["plus", 50],
   ["minus", 15],
-  ["shop", 13],
+  ["shop", 9],
   ["lucky", 9],
   ["combat", 9],
   ["forge", 8],
@@ -355,6 +373,7 @@ function newGameState() {
     boardSize: DEFAULT_BOARD_SIZE,
     board: createBoardPattern(DEFAULT_BOARD_SIZE),
     names: ["プレイヤー1", "プレイヤー2", "プレイヤー3", "プレイヤー4"],
+    avatars: ["😀", "😎", "🤠", "🧙"],
     players: [],
     orderIndex: 0,
     currentIndex: 0,
@@ -435,9 +454,13 @@ function normalizeGameState(gameState) {
   if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
     gameState.board = createBoardPattern(gameState.boardSize);
   }
+  if (!Array.isArray(gameState.avatars)) {
+    gameState.avatars = ["😀", "😎", "🤠", "🧙"];
+  }
   if (Array.isArray(gameState.players)) {
-    gameState.players.forEach((player) => {
+    gameState.players.forEach((player, index) => {
       player.position = clamp(Number(player.position) || 0, 0, gameState.board.length - 1);
+      player.avatar = player.avatar || gameState.avatars[index] || avatarOptions[index] || "😀";
     });
   }
   return gameState;
@@ -483,6 +506,7 @@ function createPlayers() {
   return Array.from({ length: state.setupCount }, (_, index) => ({
     id: index + 1,
     name: state.names[index] || `プレイヤー${index + 1}`,
+    avatar: state.avatars[index] || avatarOptions[index],
     color: playerColors[index],
     position: 0,
     money: 120,
@@ -585,9 +609,7 @@ function currentPlayer() {
 }
 
 function init() {
-  els.firebaseConfigInput.value =
-    localStorage.getItem(ONLINE_CONFIG_KEY) ||
-    JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
+  els.firebaseConfigInput.value = JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
   if (online.playerId) els.seatSelect.value = String(online.playerId);
   renderSetup();
   renderBoard();
@@ -615,6 +637,14 @@ function bindEvents() {
     if (!requireSetupControl()) return;
     state.names[Number(input.dataset.index)] = input.value;
     markChanged();
+  });
+  els.nameFields.addEventListener("change", (event) => {
+    const select = event.target.closest("select[data-avatar-index]");
+    if (!select) return;
+    if (!requireSetupControl()) return;
+    state.avatars[Number(select.dataset.avatarIndex)] = select.value;
+    markChanged();
+    renderAll();
   });
 
   els.boardSizeInput.addEventListener("input", () => {
@@ -669,7 +699,10 @@ function renderSetup() {
   els.nameFields.innerHTML = "";
   for (let index = 0; index < state.setupCount; index += 1) {
     const label = document.createElement("label");
-    label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${setupEditable ? "" : "disabled"} />`;
+    const avatarOptionsHtml = avatarOptions
+      .map((avatar) => `<option value="${avatar}" ${avatar === state.avatars[index] ? "selected" : ""}>${avatar}</option>`)
+      .join("");
+    label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${setupEditable ? "" : "disabled"} /><select data-avatar-index="${index}" ${setupEditable ? "" : "disabled"}>${avatarOptionsHtml}</select>`;
     els.nameFields.append(label);
   }
   els.boardSizeInput.value = state.boardSize || DEFAULT_BOARD_SIZE;
@@ -1248,7 +1281,7 @@ function renderOnline() {
   if (online.enabled) {
     els.onlineStatus.textContent = `${online.roomId}${seat}${online.isHost ? " / 部屋主" : ""}`;
     els.roomCodeInput.value = online.roomId;
-    els.onlineHelp.textContent = `部屋コード ${online.roomId} で接続中です。他端末も同じ Firebase 設定と部屋コードで参加できます。`;
+    els.onlineHelp.textContent = `部屋コード ${online.roomId} で接続中です。他端末も同じサイトを開き、この部屋コードで参加できます。`;
   } else {
     els.onlineStatus.textContent = "未接続";
   }
@@ -1425,6 +1458,7 @@ function structuredCloneForSync(value) {
 }
 
 function renderSetupVisibility() {
+  document.body.classList.toggle("prep-view", state.phase === "setup" || state.phase === "order");
   els.setupPanel.classList.toggle("hidden", state.phase !== "setup");
 }
 
@@ -1437,6 +1471,7 @@ function renderBoard() {
     const info = spaceTypes[type];
     const space = document.createElement("div");
     space.className = "space";
+    if (currentPlayer()?.position === index) space.classList.add("active-space");
     space.style.setProperty("--space-color", info.color);
     space.innerHTML = `
       <div class="space-number"><span>${index + 1}</span><span>${type === "goal" ? "終" : ""}</span></div>
@@ -1450,11 +1485,20 @@ function renderBoard() {
         const token = document.createElement("span");
         token.className = "token";
         token.style.background = player.color;
-        token.textContent = player.name.slice(-1);
+        token.textContent = player.avatar || player.name.slice(-1);
         tokens.append(token);
       });
     els.boardGrid.append(space);
   });
+  const followPlayer = currentPlayer();
+  if (followPlayer && !document.body.classList.contains("prep-view")) {
+    const target = els.boardGrid.children[followPlayer.position];
+    if (target) {
+      window.requestAnimationFrame(() => {
+        target.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      });
+    }
+  }
 }
 
 function renderLegend() {
@@ -1478,7 +1522,7 @@ function renderPlayers() {
     const active = currentPlayer()?.id === player.id && ["turn", "shop", "forge"].includes(state.phase);
     row.innerHTML = `
       <div class="player-main">
-        <div class="player-name"><span class="color-dot"></span><span>${escapeHtml(player.name)}${active ? " / 行動中" : ""}</span></div>
+        <div class="player-name"><span class="avatar-dot" style="background:${player.color}">${player.avatar || ""}</span><span>${escapeHtml(player.name)}${active ? " / 行動中" : ""}</span></div>
         <div class="round-pill">順${index + 1}${player.orderRoll ? ` / ${player.orderRoll}` : ""}</div>
       </div>
       <div class="stats">
@@ -1581,7 +1625,14 @@ function actionButton(label, className, handler, disabled = false) {
 
 function renderBackpack() {
   els.editorSelect.innerHTML = "";
-  state.players.forEach((player) => {
+  const visiblePlayers =
+    online.enabled && online.playerId
+      ? state.players.filter((player) => player.id === online.playerId)
+      : online.enabled
+        ? []
+        : state.players;
+  if (online.enabled && online.playerId) state.editorPlayerId = online.playerId;
+  visiblePlayers.forEach((player) => {
     const option = document.createElement("option");
     option.value = player.id;
     option.textContent = player.name;
@@ -1590,9 +1641,11 @@ function renderBackpack() {
   });
 
   const player = selectedEditorPlayer();
-  if (!player) {
+  if (!player || (online.enabled && !canControlPlayer(player))) {
     els.stashList.innerHTML = "";
     els.backpackGrid.innerHTML = "";
+    els.itemDetail.textContent = "オンライン中、他プレイヤーのバックパックは非公開です。";
+    els.editLock.textContent = online.enabled ? "担当プレイヤーを選ぶと自分のバックパックだけ確認できます。" : "";
     return;
   }
 
@@ -1632,7 +1685,7 @@ function renderBackpack() {
         const item = itemById(placed.itemId);
         cell.classList.add("occupied", `rare-${item.rarity}`);
         if (placed.x === x && placed.y === y) cell.classList.add("anchor");
-        cell.innerHTML = `<span class="cell-item">${escapeHtml(item.name)}<br>+${placed.level - 1}</span>`;
+        cell.innerHTML = `<span class="cell-item"><span class="cell-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}<br>+${placed.level - 1}</span>`;
         cell.addEventListener("click", () => removePlacedItem(placed.uid));
       } else {
         cell.disabled = !editable;
@@ -1651,7 +1704,7 @@ function renderItemCard(stashItem, item) {
   card.type = "button";
   card.innerHTML = `
     <span class="rarity-dot"></span>
-    <span class="item-name">${escapeHtml(item.name)} +${stashItem.level - 1}</span>
+    <span class="item-name"><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</span>
     <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item))}</span>
   `;
   card.addEventListener("mouseenter", () => showItemDetail(stashItem, item));
@@ -1669,7 +1722,7 @@ function shortEffect(item) {
 }
 
 function showItemDetail(stashItem, item) {
-  els.itemDetail.innerHTML = `<strong>${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
+  els.itemDetail.innerHTML = `<strong>${itemIcons[item.id] || "🎁"} ${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
 }
 
 function renderSelectedDetail(player) {
@@ -1695,7 +1748,7 @@ function renderShop() {
       const price = Math.floor(item.price * (player.shopDiscount ? 0.5 : 1));
       const card = document.createElement("div");
       card.className = "shop-item";
-      card.innerHTML = `<h3>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}</p>`;
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}</p>`;
       card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyShopItem(shopItem.uid)));
       grid.append(card);
     });
@@ -1710,7 +1763,7 @@ function renderShop() {
       const card = document.createElement("div");
       card.className = "shop-item";
       const sell = item.sell + (stashItem.level - 1) * 15;
-      card.innerHTML = `<h3>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / 売却 ${sell}G</p>`;
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / 売却 ${sell}G</p>`;
       card.append(actionButton("売却", "secondary-button", () => sellStashItem(stashItem.uid)));
       grid.append(card);
     });
@@ -1718,7 +1771,7 @@ function renderShop() {
       const item = itemById(entry.itemId);
       const card = document.createElement("div");
       card.className = "shop-item";
-      card.innerHTML = `<h3>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G</p>`;
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G</p>`;
       card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid)));
       grid.append(card);
     });
