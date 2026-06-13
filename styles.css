@@ -134,7 +134,6 @@ body.prep-view .layout {
 }
 
 body.prep-view .board-column,
-body.prep-view .status-panel,
 body.prep-view .backpack-panel,
 body.prep-view .shop-panel,
 body.prep-view .battle-panel,
@@ -147,10 +146,6 @@ body.prep-view .control-column {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
   gap: 16px;
-}
-
-body.prep-view .turn-panel {
-  grid-column: 1 / -1;
 }
 
 body.game-view .online-panel {
@@ -203,7 +198,7 @@ body.game-view .online-panel {
 }
 
 .board-header {
-  display: inline-flex;
+  display: none;
   max-width: min(100%, 520px);
   border: 2px solid #211907;
   border-radius: 8px;
@@ -417,12 +412,12 @@ textarea {
 }
 
 .board-wrap {
-  margin-top: 8px;
+  margin-top: 0;
   overflow-x: auto;
   overflow-y: hidden;
   width: 100%;
   max-width: 100%;
-  min-height: 158px;
+  min-height: 124px;
   padding: 0;
   scroll-behavior: smooth;
   scrollbar-color: #d9a514 rgba(255, 255, 255, 0.65);
@@ -436,8 +431,8 @@ textarea {
   max-width: none;
   gap: 18px;
   align-items: center;
-  min-height: 158px;
-  padding: 62px 26px 16px;
+  min-height: 124px;
+  padding: 42px 24px 12px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 226, 122, 0.14)),
     url("./assets/pixel-map.png") left center / auto 100% repeat-x;
@@ -446,19 +441,19 @@ textarea {
 .space {
   position: relative;
   display: grid;
-  width: 62px;
-  height: 62px;
-  flex: 0 0 62px;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
   place-items: center;
   overflow: visible;
-  border: 5px dotted #211907;
-  border-radius: 50%;
+  border: 4px solid #211907;
+  border-radius: 7px;
   background: var(--space-color);
   padding: 6px;
   color: #fff;
   box-shadow:
     0 5px 0 rgba(33, 25, 7, 0.32),
-    inset 0 -8px 0 rgba(33, 25, 7, 0.14);
+    inset 0 -7px 0 rgba(33, 25, 7, 0.14);
   image-rendering: pixelated;
 }
 
@@ -468,7 +463,7 @@ textarea {
   left: calc(100% + 3px);
   top: 50%;
   width: 24px;
-  height: 6px;
+  height: 5px;
   transform: translateY(-50%);
   border-radius: 999px;
   background: #211907;
@@ -480,7 +475,7 @@ textarea {
 }
 
 .space.active-space {
-  outline: 5px solid #ffe27a;
+  outline: 4px solid #ffe27a;
   transform: translateY(-6px);
 }
 
@@ -610,10 +605,14 @@ textarea {
   margin-bottom: 0;
 }
 
-.turn-panel {
-  margin-top: -12px;
-  border-top-style: dashed;
-  box-shadow: 0 5px 0 rgba(119, 89, 10, 0.12);
+.turn-inline {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 48px minmax(160px, 1.4fr);
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  border-top: 2px dashed rgba(216, 184, 71, 0.8);
+  padding-top: 8px;
 }
 
 .stat {
@@ -633,8 +632,8 @@ textarea {
 
 .dice-face {
   display: grid;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border: 2px solid var(--ink);
   border-radius: 8px;
@@ -644,9 +643,10 @@ textarea {
 }
 
 .action-area {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 0;
 }
 
 .action-row {
@@ -1051,8 +1051,8 @@ textarea {
   .board-wrap {
     width: 100%;
     max-width: 100%;
-    min-height: 188px;
-    padding-top: 88px;
+    min-height: 116px;
+    padding-top: 0;
     overflow-x: auto;
     overflow-y: hidden;
   }
@@ -1063,14 +1063,16 @@ textarea {
     min-width: max-content;
     max-width: none;
     gap: 16px;
-    padding: 10px 14px;
+    min-height: 116px;
+    padding: 36px 14px 10px;
   }
 
   .space {
-    width: 52px;
-    height: 52px;
-    flex: 0 0 52px;
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
     border-width: 3px;
+    border-radius: 6px;
   }
 
   .space::before {
@@ -1079,9 +1081,22 @@ textarea {
   }
 
   .token {
-    width: 24px;
-    height: 24px;
-    font-size: 14px;
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+  }
+
+  .turn-inline {
+    grid-template-columns: 1fr 42px;
+  }
+
+  .turn-inline .action-area {
+    grid-column: 1 / -1;
+  }
+
+  .dice-face {
+    width: 42px;
+    height: 42px;
   }
 
   .legend {

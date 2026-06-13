@@ -1676,8 +1676,7 @@ function renderTurn() {
   els.actionArea.innerHTML = "";
 
   if (state.phase === "setup") {
-    els.turnTitle.textContent = "ゲーム準備";
-    els.actionArea.innerHTML = `<div class="message-box">人数と名前を決めて、順番決定へ進んでください。</div>`;
+    els.turnTitle.textContent = online.enabled ? "参加待ち" : "ゲーム準備";
     return;
   }
 
@@ -1692,20 +1691,12 @@ function renderTurn() {
   if (state.phase === "turn") {
     els.turnTitle.textContent = `${player.name} の行動ターン`;
     els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player)));
-    const box = document.createElement("div");
-    box.className = "message-box";
-    box.textContent = "自分の行動ターン中は、自分のバックパック配置を変更できません。他プレイヤーの準備は可能です。";
-    els.actionArea.append(box);
     return;
   }
 
   if (state.phase === "combatChoice") {
     els.turnTitle.textContent = `${player.name} の戦闘相手選択`;
     const opponents = livingPlayers().filter((other) => other.id !== player.id);
-    const box = document.createElement("div");
-    box.className = "message-box";
-    box.textContent = "戦う相手を選んでください。勝者はお金と報酬アイテムを受け取ります。";
-    els.actionArea.append(box);
     const row = document.createElement("div");
     row.className = "action-row";
     opponents.forEach((opponent) => {
@@ -1729,7 +1720,6 @@ function renderTurn() {
 
   if (state.phase === "battle") {
     els.turnTitle.textContent = "戦闘中";
-    els.actionArea.innerHTML = `<div class="message-box">配置済みアイテムが自動で発動します。</div>`;
     return;
   }
 
@@ -1741,7 +1731,6 @@ function renderTurn() {
 
   if (state.phase === "gameover") {
     els.turnTitle.textContent = "ゲーム終了";
-    els.actionArea.innerHTML = `<div class="message-box">勝者が決まりました。最初から遊ぶ場合は右上の R を押してください。</div>`;
   }
 }
 
