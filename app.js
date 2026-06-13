@@ -2,7 +2,7 @@
 
 const DEFAULT_BOARD_SIZE = 40;
 const MIN_BOARD_SIZE = 24;
-const MAX_BOARD_SIZE = 80;
+const MAX_BOARD_SIZE = 200;
 const SAVE_KEY = "sugoroku-backpack-battle-save";
 const ONLINE_CONFIG_KEY = "sugoroku-firebase-config";
 const ONLINE_SEAT_KEY = "sugoroku-online-seat";
@@ -351,6 +351,7 @@ const els = {
   editorSelect: document.getElementById("editorSelect"),
   editLock: document.getElementById("editLock"),
   stashList: document.getElementById("stashList"),
+  trashZone: document.getElementById("trashZone"),
   backpackGrid: document.getElementById("backpackGrid"),
   itemDetail: document.getElementById("itemDetail"),
   shopPanel: document.getElementById("shopPanel"),
@@ -415,7 +416,8 @@ function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
   const safeSize = clamp(Number(size) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   const board = ["start"];
   for (let index = 1; index < safeSize - 1; index += 1) {
-    board.push(weightedChoice(randomSpaceWeights));
+    const weights = index < 14 ? randomSpaceWeights.filter(([type]) => type !== "combat") : randomSpaceWeights;
+    board.push(weightedChoice(weights));
   }
   board.push("goal");
   ensureMinimumSpaces(board);
@@ -432,7 +434,7 @@ function ensureMinimumSpaces(board) {
   };
   Object.entries(minimums).forEach(([type, minimum]) => {
     while (countSpaces(board, type) < minimum) {
-      const index = rand(1, board.length - 2);
+      const index = type === "combat" ? rand(14, board.length - 2) : rand(1, board.length - 2);
       board[index] = type;
     }
   });
@@ -502,6 +504,12 @@ function randomItem(minimum = "white") {
   return makeItem(choice(pool).id);
 }
 
+function addRandomItems(player, count, minimum = "white") {
+  const items = Array.from({ length: count }, () => randomItem(minimum));
+  player.stash.push(...items);
+  return items;
+}
+
 function createPlayers() {
   return Array.from({ length: state.setupCount }, (_, index) => ({
     id: index + 1,
@@ -518,7 +526,7 @@ function createPlayers() {
     backpackW: 4,
     backpackH: 4,
     backpack: [],
-    stash: [randomItem("white"), randomItem("white")],
+    stash: [],
     defeated: false,
   }));
 }
@@ -665,6 +673,20 @@ function bindEvents() {
     selectedItem = null;
     renderBackpack();
   });
+  els.trashZone.addEventListener("click", trashSelectedItem);
+  els.trashZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    els.trashZone.classList.add("drag-over");
+  });
+  els.trashZone.addEventListener("dragleave", () => {
+    els.trashZone.classList.remove("drag-over");
+  });
+  els.trashZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    els.trashZone.classList.remove("drag-over");
+    selectedItem = event.dataTransfer.getData("text/plain") || selectedItem;
+    trashSelectedItem();
+  });
   els.saveButton.addEventListener("click", saveGame);
   els.loadButton.addEventListener("click", loadGame);
   els.resetButton.addEventListener("click", resetGame);
@@ -792,9 +814,8 @@ function resolveSpace(player) {
   if (type === "plus") {
     const money = rand(25, 70);
     player.money += money;
-    const item = randomItem("white");
-    player.stash.push(item);
-    addLog(`${player.name} は ${money}G と ${itemById(item.itemId).name} を得ました。`);
+    const items = addRandomItems(player, rand(2, 3), "white");
+    addLog(`${player.name} は ${money}G と ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
     finishAction();
   } else if (type === "minus") {
     const loss = Math.min(player.money, rand(20, 60));
@@ -805,9 +826,8 @@ function resolveSpace(player) {
   } else if (type === "lucky") {
     const effect = choice(["item", "dash", "discount"]);
     if (effect === "item") {
-      const item = randomItem("green");
-      player.stash.push(item);
-      addLog(`${player.name} は幸運で ${itemById(item.itemId).name} を得ました。`);
+      const items = addRandomItems(player, 2, "green");
+      addLog(`${player.name} は幸運で ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
     } else if (effect === "dash") {
       player.rollBonus += 3;
       addLog(`${player.name} は次の移動ダイスに +3 を得ました。`);
@@ -823,9 +843,9 @@ function resolveSpace(player) {
   } else if (type === "combat") {
     openCombatChoice(player);
   } else if (type === "goal") {
-    const prize = randomItem("gold");
-    player.stash.push(prize);
-    addLog(`${player.name} がゴールに到達し、${itemById(prize.itemId).name} を得ました。最終対決へ移行します。`);
+    const prizes = [randomItem("purple"), randomItem("gold")];
+    player.stash.push(...prizes);
+    addLog(`${player.name} がゴールに到達し、${prizes.map((item) => itemById(item.itemId).name).join("、")} を得ました。最終対決へ移行します。`);
     startBattle(livingPlayers().map((p) => p.id), true, "最終対決");
   } else {
     finishAction();
@@ -875,9 +895,9 @@ function triggerEvent() {
     addLog("全体イベント: 大徴税。全員が 35G を失いました。");
   } else if (event === "drop") {
     state.players.forEach((player) => {
-      if (!player.defeated) player.stash.push(randomItem("green"));
+      if (!player.defeated) addRandomItems(player, 2, "green");
     });
-    addLog("全体イベント: 補給便。全員がアイテムを1つ得ました。");
+    addLog("全体イベント: 補給便。全員がアイテムを2つ得ました。");
   } else {
     addLog("全体イベント: 大乱戦。全員参加の戦闘が始まります。");
     startBattle(livingPlayers().map((player) => player.id), false, "大乱戦イベント");
@@ -1020,6 +1040,7 @@ function startBattle(playerIds, isFinal, title) {
       alive: true,
       rank: null,
       cooldowns: {},
+      lastTickAt: Date.now(),
     };
   });
 
@@ -1046,10 +1067,18 @@ function runBattle() {
   state.battle.participants.forEach((fighter) => {
     const player = state.players.find((p) => p.id === fighter.playerId);
     player.nextBattlePenalty = 0;
+    fighter.lastTickAt = Date.now();
+    fighter.cooldowns = {};
+    placedItems(player).forEach((entry) => {
+      const item = itemById(entry.itemId);
+      if (item.damage || item.poison || item.heal) {
+        fighter.cooldowns[entry.uid] = Math.max(600, item.interval || 2500);
+      }
+    });
   });
   renderAll();
   markChanged();
-  battleTickHandle = window.setInterval(battleTick, 700);
+  battleTickHandle = window.setInterval(battleTick, 250);
 }
 
 function battleTick() {
@@ -1064,6 +1093,9 @@ function battleTick() {
 
   for (const fighter of alive) {
     if (!fighter.alive) continue;
+    const now = Date.now();
+    const delta = Math.min(1000, now - (fighter.lastTickAt || now));
+    fighter.lastTickAt = now;
     const player = state.players.find((p) => p.id === fighter.playerId);
     const placed = placedItems(player);
     const targetPool = battle.participants.filter((target) => target.alive && target.playerId !== player.id);
@@ -1078,11 +1110,11 @@ function battleTick() {
     for (const entry of placed) {
       const item = itemById(entry.itemId);
       const key = entry.uid;
-      fighter.cooldowns[key] = Math.max(0, (fighter.cooldowns[key] || 0) - 700);
+      fighter.cooldowns[key] = Math.max(0, (fighter.cooldowns[key] ?? item.interval ?? 2500) - delta);
       if (fighter.cooldowns[key] > 0) continue;
 
       if (item.damage || item.poison) {
-        fighter.cooldowns[key] = item.interval || 2500;
+        fighter.cooldowns[key] = Math.max(600, item.interval || 2500);
         const damage = calculateDamage(player, entry, item);
         const finalDamage = Math.max(1, Math.round(damage * (1 - (player.nextBattlePenalty || 0))));
         applyDamage(target, finalDamage, `${player.name} の ${item.name}`);
@@ -1092,7 +1124,7 @@ function battleTick() {
       }
 
       if (item.heal) {
-        fighter.cooldowns[key] = item.interval || 3500;
+        fighter.cooldowns[key] = Math.max(600, item.interval || 3500);
         const amount = item.heal + entry.level * 2;
         fighter.hp = Math.min(100, fighter.hp + amount);
         battle.feed.unshift(`${player.name} は ${item.name} で ${amount} 回復。`);
@@ -1154,7 +1186,7 @@ function finishBattle() {
     addLog(`最終対決の勝者は ${winnerPlayer.name}。ゲーム終了です。`);
   } else {
     winnerPlayer.money += 90;
-    winnerPlayer.stash.push(randomItem("green"));
+    addRandomItems(winnerPlayer, 2, "green");
     battle.participants.forEach((fighter) => {
       if (fighter.playerId !== winner.playerId) {
         const player = state.players.find((p) => p.id === fighter.playerId);
@@ -1261,6 +1293,29 @@ function removePlacedItem(uidValue) {
   player.stash.push({ uid: item.uid, itemId: item.itemId, level: item.level });
   addLog(`${player.name} は ${itemById(item.itemId).name} を手持ちに戻しました。`);
   renderBackpack();
+}
+
+function trashSelectedItem() {
+  const player = selectedEditorPlayer();
+  if (!player || !selectedItem || !canEditBackpack(player)) return;
+  if (online.enabled && !canControlPlayer(player)) {
+    localNotice("担当プレイヤーのアイテムだけ捨てられます。");
+    return;
+  }
+  const index = player.stash.findIndex((item) => item.uid === selectedItem);
+  if (index < 0) {
+    localNotice("捨てるアイテムを手持ちから選んでください。");
+    return;
+  }
+  const item = player.stash[index];
+  const catalog = itemById(item.itemId);
+  const ok = window.confirm(`${catalog.name} を捨てますか？`);
+  if (!ok) return;
+  player.stash.splice(index, 1);
+  selectedItem = null;
+  addLog(`${player.name} は ${catalog.name} を捨てました。`);
+  renderBackpack();
+  markChanged();
 }
 
 function renderAll() {
@@ -1448,7 +1503,7 @@ function scheduleOnlineBattleLoops() {
     const delay = Math.max(0, state.battle.prepEnd - Date.now());
     battleTimerHandle = window.setTimeout(runBattle, delay);
   } else if (state.phase === "battle") {
-    battleTickHandle = window.setInterval(battleTick, 700);
+    battleTickHandle = window.setInterval(battleTick, 250);
   }
 }
 
@@ -1516,8 +1571,7 @@ function renderSetupVisibility() {
 function renderBoard() {
   els.boardGrid.innerHTML = "";
   const board = activeBoard();
-  const columns = board.length >= 64 ? 10 : board.length >= 42 ? 8 : 6;
-  els.boardGrid.style.gridTemplateColumns = `repeat(${columns}, minmax(58px, 1fr))`;
+  els.boardGrid.style.gridTemplateColumns = "";
   board.forEach((type, index) => {
     const info = spaceTypes[type];
     const space = document.createElement("div");
@@ -1710,6 +1764,11 @@ function renderBackpack() {
     const item = itemById(stashItem.itemId);
     const card = renderItemCard(stashItem, item);
     card.disabled = !editable;
+    card.draggable = editable;
+    card.addEventListener("dragstart", (event) => {
+      selectedItem = stashItem.uid;
+      event.dataTransfer.setData("text/plain", stashItem.uid);
+    });
     card.classList.toggle("selected", selectedItem === stashItem.uid);
     card.addEventListener("click", () => {
       selectedItem = selectedItem === stashItem.uid ? null : stashItem.uid;
@@ -1857,6 +1916,7 @@ function renderBattle() {
     row.innerHTML = `
       <div class="fighter-head"><span>${escapeHtml(player.name)}</span><span>${Math.max(0, Math.round(fighter.hp))} HP / 盾 ${fighter.shield}</span></div>
       <div class="hp-bar"><span class="hp-fill" style="--hp:${Math.max(0, fighter.hp)}%"></span></div>
+      <div class="battle-items">${renderBattleItems(player, fighter)}</div>
     `;
     els.battleArena.append(row);
   });
@@ -1865,6 +1925,29 @@ function renderBattle() {
   feed.className = "battle-feed";
   feed.innerHTML = battle.feed.slice(0, 12).map((line) => `<div>${escapeHtml(line)}</div>`).join("");
   els.battleArena.append(feed);
+}
+
+function renderBattleItems(player, fighter) {
+  const entries = placedItems(player).filter((entry) => {
+    const item = itemById(entry.itemId);
+    return item.damage || item.poison || item.heal || item.boost || item.boostAll || item.shield || item.weaken;
+  });
+  if (!entries.length) return `<div class="battle-item muted">装備なし</div>`;
+  return entries
+    .map((entry) => {
+      const item = itemById(entry.itemId);
+      const cooldown = fighter.cooldowns?.[entry.uid] || 0;
+      const interval = item.interval || (item.damage || item.poison || item.heal ? 2500 : 0);
+      const progress = interval ? clamp(100 - (cooldown / interval) * 100, 0, 100) : 100;
+      const label = interval ? `${Math.ceil(cooldown / 1000)}s` : "常時";
+      return `<div class="battle-item rare-${item.rarity}">
+        <span>${itemIcons[item.id] || "🎁"}</span>
+        <strong>${escapeHtml(item.name)}</strong>
+        <em>${label}</em>
+        <i style="--ready:${progress}%"></i>
+      </div>`;
+    })
+    .join("");
 }
 
 function renderLog() {
