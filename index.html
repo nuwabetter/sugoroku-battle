@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>バックパックすごろくバトル</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">2〜4人 / ローカル対戦</p>
+          <h1>バックパックすごろくバトル</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="saveButton" type="button" title="保存">
+            <span aria-hidden="true">S</span>
+          </button>
+          <button class="icon-button" id="loadButton" type="button" title="読み込み">
+            <span aria-hidden="true">L</span>
+          </button>
+          <button class="icon-button danger" id="resetButton" type="button" title="最初から">
+            <span aria-hidden="true">R</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="board-column">
+          <div class="board-header">
+            <div>
+              <p class="eyebrow">Sugoroku Map</p>
+              <h2>マップ</h2>
+            </div>
+            <div class="round-pill" id="phaseBadge">準備中</div>
+          </div>
+          <div class="board-wrap">
+            <div class="board-grid" id="boardGrid" aria-label="すごろくマップ"></div>
+          </div>
+          <div class="legend" id="legend"></div>
+        </section>
+
+        <section class="control-column">
+          <section class="panel online-panel" id="onlinePanel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Online</p>
+                <h2>オンライン部屋</h2>
+              </div>
+              <div class="round-pill" id="onlineStatus">未接続</div>
+            </div>
+            <textarea id="firebaseConfigInput" rows="5" spellcheck="false" placeholder='Firebase の Web 設定を貼り付けます。例: {"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
+            <div class="online-grid">
+              <button class="primary-button" id="createRoomButton" type="button">部屋を作る</button>
+              <input id="roomCodeInput" maxlength="6" placeholder="部屋コード" />
+              <button class="secondary-button" id="joinRoomButton" type="button">部屋に入る</button>
+            </div>
+            <div class="online-grid compact">
+              <select id="seatSelect" aria-label="この端末の担当プレイヤー">
+                <option value="">観戦</option>
+                <option value="1">P1担当</option>
+                <option value="2">P2担当</option>
+                <option value="3">P3担当</option>
+                <option value="4">P4担当</option>
+              </select>
+              <button class="small-button" id="leaveRoomButton" type="button">退出</button>
+            </div>
+            <div class="message-box" id="onlineHelp">Firebase プロジェクトの Web 設定を入れて部屋を作ると、他端末は同じ設定と部屋コードで参加できます。</div>
+          </section>
+
+          <section class="panel setup-panel" id="setupPanel">
+            <p class="eyebrow">Game Setup</p>
+            <h2>プレイヤー設定</h2>
+            <div class="segmented" id="playerCountGroup" role="group" aria-label="プレイヤー人数">
+              <button type="button" data-count="2">2人</button>
+              <button type="button" data-count="3" class="active">3人</button>
+              <button type="button" data-count="4">4人</button>
+            </div>
+            <div class="name-fields" id="nameFields"></div>
+            <button class="primary-button" id="startGameButton" type="button">順番決定へ</button>
+          </section>
+
+          <section class="panel status-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Players</p>
+                <h2>プレイヤー状況</h2>
+              </div>
+              <div class="round-pill" id="eventCounter">イベント: 2周ごと</div>
+            </div>
+            <div class="players-list" id="playersList"></div>
+          </section>
+
+          <section class="panel turn-panel" id="turnPanel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Turn</p>
+                <h2 id="turnTitle">待機中</h2>
+              </div>
+              <div class="dice-face" id="diceFace">?</div>
+            </div>
+            <div class="action-area" id="actionArea"></div>
+          </section>
+
+          <section class="panel backpack-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Backpack</p>
+                <h2>バックパック</h2>
+              </div>
+              <select id="editorSelect" aria-label="編集するプレイヤー"></select>
+            </div>
+            <div class="edit-lock" id="editLock"></div>
+            <div class="stash" id="stashList"></div>
+            <div class="backpack-grid" id="backpackGrid"></div>
+            <div class="item-detail" id="itemDetail">アイテムを選択すると詳細が表示されます。</div>
+          </section>
+        </section>
+
+        <section class="side-column">
+          <section class="panel shop-panel" id="shopPanel">
+            <p class="eyebrow">Market / Forge</p>
+            <h2 id="shopTitle">ショップ</h2>
+            <div id="shopContent" class="shop-content"></div>
+          </section>
+
+          <section class="panel battle-panel" id="battlePanel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Battle</p>
+                <h2>戦闘</h2>
+              </div>
+              <div class="round-pill" id="battleTimer">待機</div>
+            </div>
+            <div id="battleArena" class="battle-arena"></div>
+          </section>
+
+          <section class="panel log-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">History</p>
+                <h2>ログ</h2>
+              </div>
+              <button class="small-button" id="clearLogButton" type="button">消去</button>
+            </div>
+            <div class="log-list" id="logList" aria-live="polite"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="itemCardTemplate">
+      <button class="item-card" type="button">
+        <span class="rarity-dot"></span>
+        <span class="item-name"></span>
+        <span class="item-meta"></span>
+      </button>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

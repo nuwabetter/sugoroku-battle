@@ -1,0 +1,1707 @@
+"use strict";
+
+const BOARD_LENGTH = 40;
+const SAVE_KEY = "sugoroku-backpack-battle-save";
+const ONLINE_CONFIG_KEY = "sugoroku-firebase-config";
+const ONLINE_SEAT_KEY = "sugoroku-online-seat";
+const FIREBASE_SDK_VERSION = "10.12.5";
+
+const rarityOrder = ["white", "green", "blue", "purple", "gold"];
+const rarityNames = {
+  white: "白",
+  green: "緑",
+  blue: "青",
+  purple: "紫",
+  gold: "金",
+};
+
+const rarityWeights = {
+  white: 48,
+  green: 28,
+  blue: 15,
+  purple: 7,
+  gold: 2,
+};
+
+const spaceTypes = {
+  start: { label: "START", color: "#5f746c" },
+  plus: { label: "プラス", color: "#3ca370" },
+  minus: { label: "マイナス", color: "#d4453f" },
+  lucky: { label: "ラッキー", color: "#d7a12b" },
+  shop: { label: "ショップ", color: "#3278c6" },
+  forge: { label: "鍛造", color: "#8758b8" },
+  combat: { label: "戦闘", color: "#1f2937" },
+  goal: { label: "GOAL", color: "#d7a12b" },
+};
+
+const playerColors = ["#d4453f", "#137c6b", "#3278c6", "#8758b8"];
+
+const itemCatalog = [
+  {
+    id: "rusty_sword",
+    name: "錆びた剣",
+    rarity: "white",
+    type: "attack",
+    w: 1,
+    h: 2,
+    price: 35,
+    sell: 12,
+    damage: 8,
+    interval: 2400,
+    description: "戦闘中、一定間隔で相手を攻撃する。",
+  },
+  {
+    id: "coin_pouch",
+    name: "小銭袋",
+    rarity: "white",
+    type: "support",
+    w: 1,
+    h: 1,
+    price: 28,
+    sell: 10,
+    income: 10,
+    description: "自分の行動ターン開始時にお金を得る。",
+  },
+  {
+    id: "wooden_shield",
+    name: "木の盾",
+    rarity: "white",
+    type: "defense",
+    w: 2,
+    h: 1,
+    price: 30,
+    sell: 11,
+    shield: 5,
+    description: "戦闘開始時にシールドを得る。",
+  },
+  {
+    id: "quick_dagger",
+    name: "早業ダガー",
+    rarity: "green",
+    type: "attack",
+    w: 1,
+    h: 1,
+    price: 58,
+    sell: 24,
+    damage: 6,
+    interval: 1400,
+    description: "軽く素早く攻撃する。",
+  },
+  {
+    id: "herb_kit",
+    name: "薬草キット",
+    rarity: "green",
+    type: "support",
+    w: 2,
+    h: 1,
+    price: 62,
+    sell: 25,
+    heal: 5,
+    interval: 3600,
+    description: "戦闘中、一定間隔でHPを回復する。",
+  },
+  {
+    id: "poison_vial",
+    name: "毒の小瓶",
+    rarity: "green",
+    type: "debuff",
+    w: 1,
+    h: 1,
+    price: 64,
+    sell: 26,
+    poison: 3,
+    interval: 2600,
+    description: "相手に防ぎにくい継続ダメージを与える。",
+  },
+  {
+    id: "iron_axe",
+    name: "鉄の斧",
+    rarity: "blue",
+    type: "attack",
+    w: 2,
+    h: 2,
+    price: 105,
+    sell: 46,
+    damage: 18,
+    interval: 3200,
+    description: "遅いが重い一撃を放つ。",
+  },
+  {
+    id: "focus_lens",
+    name: "集中レンズ",
+    rarity: "blue",
+    type: "booster",
+    w: 1,
+    h: 1,
+    price: 95,
+    sell: 42,
+    boost: 0.18,
+    description: "隣接する攻撃アイテムの威力を上げる。",
+  },
+  {
+    id: "silver_bank",
+    name: "銀の金庫",
+    rarity: "blue",
+    type: "support",
+    w: 2,
+    h: 1,
+    price: 112,
+    sell: 48,
+    income: 25,
+    shield: 6,
+    description: "ターン開始時のお金と戦闘開始時シールドを得る。",
+  },
+  {
+    id: "storm_staff",
+    name: "嵐の杖",
+    rarity: "purple",
+    type: "attack",
+    w: 1,
+    h: 3,
+    price: 175,
+    sell: 82,
+    damage: 14,
+    interval: 1500,
+    description: "高頻度で魔法攻撃を行う。",
+  },
+  {
+    id: "hex_charm",
+    name: "呪紋チャーム",
+    rarity: "purple",
+    type: "debuff",
+    w: 1,
+    h: 1,
+    price: 160,
+    sell: 74,
+    weaken: 0.16,
+    description: "相手の攻撃力を下げる。",
+  },
+  {
+    id: "royal_banner",
+    name: "王家の旗",
+    rarity: "purple",
+    type: "booster",
+    w: 2,
+    h: 2,
+    price: 190,
+    sell: 88,
+    boostAll: 0.12,
+    income: 18,
+    description: "全攻撃アイテムを強化し、お金も得る。",
+  },
+  {
+    id: "sun_blade",
+    name: "太陽剣",
+    rarity: "gold",
+    type: "attack",
+    w: 2,
+    h: 2,
+    price: 320,
+    sell: 155,
+    damage: 30,
+    interval: 2300,
+    healOnHit: 4,
+    description: "大ダメージを与え、命中時に少し回復する。",
+  },
+  {
+    id: "dragon_heart",
+    name: "竜心炉",
+    rarity: "gold",
+    type: "booster",
+    w: 2,
+    h: 2,
+    price: 360,
+    sell: 170,
+    boostAll: 0.26,
+    shield: 20,
+    description: "全攻撃を大きく強化し、戦闘開始時シールドを得る。",
+  },
+];
+
+const boardPattern = [
+  "start",
+  "plus",
+  "shop",
+  "minus",
+  "lucky",
+  "plus",
+  "combat",
+  "forge",
+  "plus",
+  "minus",
+  "lucky",
+  "shop",
+  "plus",
+  "combat",
+  "minus",
+  "forge",
+  "plus",
+  "lucky",
+  "shop",
+  "minus",
+  "combat",
+  "plus",
+  "forge",
+  "lucky",
+  "minus",
+  "shop",
+  "plus",
+  "combat",
+  "forge",
+  "plus",
+  "lucky",
+  "minus",
+  "shop",
+  "combat",
+  "plus",
+  "forge",
+  "minus",
+  "lucky",
+  "plus",
+  "goal",
+];
+
+let state = newGameState();
+let selectedItem = null;
+let battleTimerHandle = null;
+let battleTickHandle = null;
+let renderTimerHandle = null;
+let online = {
+  enabled: false,
+  ready: false,
+  clientId: localStorage.getItem("sugoroku-client-id") || uid(),
+  roomId: "",
+  playerId: Number(localStorage.getItem(ONLINE_SEAT_KEY)) || null,
+  isHost: false,
+  isApplyingRemote: false,
+  isPushing: false,
+  saveTimer: null,
+  modules: null,
+  app: null,
+  auth: null,
+  db: null,
+  roomRef: null,
+  unsubscribe: null,
+};
+localStorage.setItem("sugoroku-client-id", online.clientId);
+
+const els = {
+  onlinePanel: document.getElementById("onlinePanel"),
+  onlineStatus: document.getElementById("onlineStatus"),
+  firebaseConfigInput: document.getElementById("firebaseConfigInput"),
+  roomCodeInput: document.getElementById("roomCodeInput"),
+  createRoomButton: document.getElementById("createRoomButton"),
+  joinRoomButton: document.getElementById("joinRoomButton"),
+  leaveRoomButton: document.getElementById("leaveRoomButton"),
+  seatSelect: document.getElementById("seatSelect"),
+  onlineHelp: document.getElementById("onlineHelp"),
+  setupPanel: document.getElementById("setupPanel"),
+  playerCountGroup: document.getElementById("playerCountGroup"),
+  nameFields: document.getElementById("nameFields"),
+  startGameButton: document.getElementById("startGameButton"),
+  boardGrid: document.getElementById("boardGrid"),
+  legend: document.getElementById("legend"),
+  phaseBadge: document.getElementById("phaseBadge"),
+  eventCounter: document.getElementById("eventCounter"),
+  playersList: document.getElementById("playersList"),
+  turnTitle: document.getElementById("turnTitle"),
+  diceFace: document.getElementById("diceFace"),
+  actionArea: document.getElementById("actionArea"),
+  editorSelect: document.getElementById("editorSelect"),
+  editLock: document.getElementById("editLock"),
+  stashList: document.getElementById("stashList"),
+  backpackGrid: document.getElementById("backpackGrid"),
+  itemDetail: document.getElementById("itemDetail"),
+  shopPanel: document.getElementById("shopPanel"),
+  shopTitle: document.getElementById("shopTitle"),
+  shopContent: document.getElementById("shopContent"),
+  battlePanel: document.getElementById("battlePanel"),
+  battleTimer: document.getElementById("battleTimer"),
+  battleArena: document.getElementById("battleArena"),
+  logList: document.getElementById("logList"),
+  saveButton: document.getElementById("saveButton"),
+  loadButton: document.getElementById("loadButton"),
+  resetButton: document.getElementById("resetButton"),
+  clearLogButton: document.getElementById("clearLogButton"),
+};
+
+function newGameState() {
+  return {
+    phase: "setup",
+    setupCount: 3,
+    names: ["プレイヤー1", "プレイヤー2", "プレイヤー3", "プレイヤー4"],
+    players: [],
+    orderIndex: 0,
+    currentIndex: 0,
+    editorPlayerId: null,
+    pendingShop: [],
+    battle: null,
+    nextEventTurn: 2,
+    log: [],
+  };
+}
+
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function rand(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function choice(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function itemById(id) {
+  return itemCatalog.find((item) => item.id === id);
+}
+
+function makeItem(itemId) {
+  return {
+    uid: uid(),
+    itemId,
+    level: 1,
+  };
+}
+
+function rarityValue(rarity) {
+  return rarityOrder.indexOf(rarity) + 1;
+}
+
+function randomRarity(minimum = "white") {
+  const minIndex = rarityOrder.indexOf(minimum);
+  const entries = rarityOrder
+    .slice(minIndex)
+    .map((rarity) => [rarity, rarityWeights[rarity]]);
+  const total = entries.reduce((sum, entry) => sum + entry[1], 0);
+  let roll = Math.random() * total;
+  for (const [rarity, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return rarity;
+  }
+  return entries[entries.length - 1][0];
+}
+
+function randomItem(minimum = "white") {
+  const rarity = randomRarity(minimum);
+  const pool = itemCatalog.filter((item) => item.rarity === rarity);
+  return makeItem(choice(pool).id);
+}
+
+function createPlayers() {
+  return Array.from({ length: state.setupCount }, (_, index) => ({
+    id: index + 1,
+    name: state.names[index] || `プレイヤー${index + 1}`,
+    color: playerColors[index],
+    position: 0,
+    money: 120,
+    turnCount: 0,
+    orderRoll: null,
+    rollBonus: 0,
+    shopDiscount: false,
+    nextBattlePenalty: 0,
+    backpackW: 4,
+    backpackH: 4,
+    backpack: [],
+    stash: [randomItem("white"), randomItem("white")],
+    defeated: false,
+  }));
+}
+
+function addLog(text) {
+  state.log.push({ id: uid(), text });
+  if (state.log.length > 90) state.log = state.log.slice(-90);
+  markChanged();
+  renderLog();
+}
+
+function markChanged() {
+  if (!online.enabled || !online.ready || online.isApplyingRemote || !online.roomRef) return;
+  window.clearTimeout(online.saveTimer);
+  online.saveTimer = window.setTimeout(pushOnlineState, 180);
+}
+
+async function pushOnlineState() {
+  if (!online.enabled || !online.ready || online.isApplyingRemote || online.isPushing || !online.roomRef) return;
+  online.isPushing = true;
+  try {
+    const { setDoc, serverTimestamp } = online.modules;
+    await setDoc(
+      online.roomRef,
+      {
+        state: structuredCloneForSync(state),
+        updatedAt: serverTimestamp(),
+        updatedBy: online.clientId,
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    setOnlineStatus(`同期失敗: ${error.message}`);
+  } finally {
+    online.isPushing = false;
+  }
+}
+
+function phaseLabel() {
+  const labels = {
+    setup: "準備中",
+    order: "順番決定",
+    turn: "行動ターン",
+    shop: "ショップ",
+    forge: "鍛造",
+    combatChoice: "戦闘相手選択",
+    battlePrep: "戦闘準備",
+    battle: "戦闘中",
+    battleResult: "戦闘結果",
+    final: "最終対決",
+    gameover: "決着",
+  };
+  return labels[state.phase] || state.phase;
+}
+
+function localNotice(text) {
+  setOnlineStatus(text);
+  els.onlineHelp.textContent = text;
+}
+
+function canControlSetup() {
+  return !online.enabled || online.isHost;
+}
+
+function canControlPlayer(player) {
+  if (!online.enabled) return true;
+  return Boolean(player && online.playerId === player.id);
+}
+
+function requireSetupControl() {
+  if (canControlSetup()) return true;
+  localNotice("部屋主の端末だけが人数変更とゲーム開始を行えます。");
+  return false;
+}
+
+function requirePlayerControl(player) {
+  if (canControlPlayer(player)) return true;
+  localNotice("この端末の担当プレイヤーではありません。");
+  return false;
+}
+
+function livingPlayers() {
+  return state.players.filter((player) => !player.defeated);
+}
+
+function currentPlayer() {
+  return livingPlayers()[state.currentIndex % Math.max(1, livingPlayers().length)];
+}
+
+function init() {
+  els.firebaseConfigInput.value = localStorage.getItem(ONLINE_CONFIG_KEY) || "";
+  if (online.playerId) els.seatSelect.value = String(online.playerId);
+  renderSetup();
+  renderBoard();
+  renderLegend();
+  bindEvents();
+  renderAll();
+  renderTimerHandle = window.setInterval(() => {
+    if (state.phase === "battlePrep") renderBattle();
+  }, 300);
+}
+
+function bindEvents() {
+  els.playerCountGroup.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-count]");
+    if (!button) return;
+    if (!requireSetupControl()) return;
+    state.setupCount = Number(button.dataset.count);
+    markChanged();
+    renderSetup();
+  });
+
+  els.nameFields.addEventListener("input", (event) => {
+    const input = event.target.closest("input[data-index]");
+    if (!input) return;
+    if (!requireSetupControl()) return;
+    state.names[Number(input.dataset.index)] = input.value;
+    markChanged();
+  });
+
+  els.startGameButton.addEventListener("click", startOrderPhase);
+  els.editorSelect.addEventListener("change", () => {
+    state.editorPlayerId = Number(els.editorSelect.value);
+    selectedItem = null;
+    renderBackpack();
+  });
+  els.saveButton.addEventListener("click", saveGame);
+  els.loadButton.addEventListener("click", loadGame);
+  els.resetButton.addEventListener("click", resetGame);
+  els.clearLogButton.addEventListener("click", () => {
+    state.log = [];
+    markChanged();
+    renderLog();
+  });
+  els.createRoomButton.addEventListener("click", createOnlineRoom);
+  els.joinRoomButton.addEventListener("click", joinOnlineRoom);
+  els.leaveRoomButton.addEventListener("click", leaveOnlineRoom);
+  els.seatSelect.addEventListener("change", () => {
+    online.playerId = Number(els.seatSelect.value) || null;
+    if (online.playerId) localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
+    else localStorage.removeItem(ONLINE_SEAT_KEY);
+    renderAll();
+  });
+  els.firebaseConfigInput.addEventListener("change", () => {
+    localStorage.setItem(ONLINE_CONFIG_KEY, els.firebaseConfigInput.value.trim());
+  });
+  els.roomCodeInput.addEventListener("input", () => {
+    els.roomCodeInput.value = els.roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  });
+}
+
+function renderSetup() {
+  const setupEditable = canControlSetup();
+  [...els.playerCountGroup.querySelectorAll("button")].forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.count) === state.setupCount);
+    button.disabled = !setupEditable;
+  });
+
+  els.nameFields.innerHTML = "";
+  for (let index = 0; index < state.setupCount; index += 1) {
+    const label = document.createElement("label");
+    label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${setupEditable ? "" : "disabled"} />`;
+    els.nameFields.append(label);
+  }
+  els.startGameButton.disabled = !setupEditable;
+}
+
+function startOrderPhase() {
+  if (!requireSetupControl()) return;
+  state.players = createPlayers();
+  state.phase = "order";
+  state.orderIndex = 0;
+  state.currentIndex = 0;
+  state.editorPlayerId = state.players[0].id;
+  addLog("ゲーム開始。まずは1〜100ダイスで行動順を決めます。");
+  renderAll();
+}
+
+function rollOrderDice() {
+  const player = state.players[state.orderIndex];
+  if (!requirePlayerControl(player)) return;
+  const roll = rand(1, 100);
+  player.orderRoll = roll;
+  els.diceFace.textContent = roll;
+  addLog(`${player.name} が順番決定ダイスで ${roll} を出しました。`);
+  state.orderIndex += 1;
+  if (state.orderIndex >= state.players.length) {
+    state.players.sort((a, b) => b.orderRoll - a.orderRoll);
+    state.currentIndex = 0;
+    state.phase = "turn";
+    addLog(`行動順が確定しました: ${state.players.map((p) => p.name).join(" → ")}`);
+    beginTurn();
+  }
+  renderAll();
+}
+
+function beginTurn() {
+  const player = currentPlayer();
+  if (!player) return;
+  purgeOverflow(player);
+  const income = placedItems(player).reduce((sum, placed) => {
+    const item = itemById(placed.itemId);
+    return sum + (item.income || 0) + (placed.level - 1) * 3;
+  }, 0);
+  if (income > 0) {
+    player.money += income;
+    addLog(`${player.name} はバックパック効果で ${income}G 得ました。`);
+  }
+}
+
+function purgeOverflow(player) {
+  if (player.stash.length <= 3) return;
+  const removed = [];
+  while (player.stash.length > 3) {
+    const index = rand(0, player.stash.length - 1);
+    const [item] = player.stash.splice(index, 1);
+    removed.push(itemById(item.itemId).name);
+  }
+  addLog(`${player.name} の手持ちが多すぎたため、${removed.join("、")} が失われました。`);
+}
+
+function rollMoveDice() {
+  const player = currentPlayer();
+  if (!player || state.phase !== "turn") return;
+  if (!requirePlayerControl(player)) return;
+  const baseRoll = rand(1, 6);
+  const bonus = player.rollBonus || 0;
+  player.rollBonus = 0;
+  const total = baseRoll + bonus;
+  els.diceFace.textContent = total;
+  player.position = clamp(player.position + total, 0, BOARD_LENGTH - 1);
+  player.turnCount += 1;
+  addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
+  resolveSpace(player);
+  renderAll();
+}
+
+function resolveSpace(player) {
+  const type = boardPattern[player.position];
+  const name = spaceTypes[type].label;
+  addLog(`${player.name} は「${name}」に止まりました。`);
+
+  if (type === "plus") {
+    const money = rand(25, 70);
+    player.money += money;
+    const item = randomItem("white");
+    player.stash.push(item);
+    addLog(`${player.name} は ${money}G と ${itemById(item.itemId).name} を得ました。`);
+    finishAction();
+  } else if (type === "minus") {
+    const loss = Math.min(player.money, rand(20, 60));
+    player.money -= loss;
+    player.nextBattlePenalty += 0.12;
+    addLog(`${player.name} は ${loss}G を失い、次の戦闘で攻撃力が下がります。`);
+    finishAction();
+  } else if (type === "lucky") {
+    const effect = choice(["item", "dash", "discount"]);
+    if (effect === "item") {
+      const item = randomItem("green");
+      player.stash.push(item);
+      addLog(`${player.name} は幸運で ${itemById(item.itemId).name} を得ました。`);
+    } else if (effect === "dash") {
+      player.rollBonus += 3;
+      addLog(`${player.name} は次の移動ダイスに +3 を得ました。`);
+    } else {
+      player.shopDiscount = true;
+      addLog(`${player.name} は次のショップで半額券を使えます。`);
+    }
+    finishAction();
+  } else if (type === "shop") {
+    openShop(player);
+  } else if (type === "forge") {
+    openForge(player);
+  } else if (type === "combat") {
+    openCombatChoice(player);
+  } else if (type === "goal") {
+    const prize = randomItem("gold");
+    player.stash.push(prize);
+    addLog(`${player.name} がゴールに到達し、${itemById(prize.itemId).name} を得ました。最終対決へ移行します。`);
+    startBattle(livingPlayers().map((p) => p.id), true, "最終対決");
+  } else {
+    finishAction();
+  }
+}
+
+function finishAction() {
+  if (state.phase !== "turn") return;
+  maybeTriggerEvent();
+  if (state.phase !== "turn") return;
+  advanceTurn();
+}
+
+function advanceTurn() {
+  const alive = livingPlayers();
+  if (alive.length < 2) {
+    state.phase = "gameover";
+    addLog(`${alive[0]?.name || "最後のプレイヤー"} が勝者です。`);
+    renderAll();
+    return;
+  }
+  state.currentIndex = (state.currentIndex + 1) % alive.length;
+  beginTurn();
+  renderAll();
+}
+
+function maybeTriggerEvent() {
+  const minTurns = Math.min(...state.players.map((player) => player.turnCount));
+  if (minTurns < state.nextEventTurn) return;
+  state.nextEventTurn += 2;
+  triggerEvent();
+}
+
+function triggerEvent() {
+  const event = choice(["bonus", "tax", "drop", "brawl"]);
+  if (event === "bonus") {
+    state.players.forEach((player) => {
+      if (!player.defeated) player.money += 50;
+    });
+    addLog("全体イベント: 祝祭。全員が 50G を得ました。");
+  } else if (event === "tax") {
+    state.players.forEach((player) => {
+      if (!player.defeated) player.money = Math.max(0, player.money - 35);
+    });
+    addLog("全体イベント: 大徴税。全員が 35G を失いました。");
+  } else if (event === "drop") {
+    state.players.forEach((player) => {
+      if (!player.defeated) player.stash.push(randomItem("green"));
+    });
+    addLog("全体イベント: 補給便。全員がアイテムを1つ得ました。");
+  } else {
+    addLog("全体イベント: 大乱戦。全員参加の戦闘が始まります。");
+    startBattle(livingPlayers().map((player) => player.id), false, "大乱戦イベント");
+  }
+}
+
+function openShop(player) {
+  state.phase = "shop";
+  state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
+  els.shopPanel.classList.remove("hidden");
+  addLog(`${player.name} はショップに入りました。`);
+  renderAll();
+}
+
+function buyShopItem(uidValue) {
+  const player = currentPlayer();
+  if (!requirePlayerControl(player)) return;
+  const index = state.pendingShop.findIndex((item) => item.uid === uidValue);
+  if (!player || index < 0) return;
+  const item = state.pendingShop[index];
+  const catalog = itemById(item.itemId);
+  const price = Math.floor(catalog.price * (player.shopDiscount ? 0.5 : 1));
+  if (player.money < price) {
+    addLog(`${player.name} は ${catalog.name} を買うお金が足りません。`);
+    return;
+  }
+  player.money -= price;
+  player.shopDiscount = false;
+  player.stash.push(item);
+  state.pendingShop.splice(index, 1);
+  addLog(`${player.name} は ${catalog.name} を ${price}G で購入しました。`);
+  renderAll();
+}
+
+function buyBackpackExpansion() {
+  const player = currentPlayer();
+  if (!player) return;
+  if (!requirePlayerControl(player)) return;
+  const cost = 130 + (player.backpackW + player.backpackH - 8) * 45;
+  if (player.money < cost) {
+    addLog(`${player.name} はバックパック拡張のお金が足りません。`);
+    return;
+  }
+  if (player.backpackW >= 6 && player.backpackH >= 6) {
+    addLog("バックパックはこれ以上拡張できません。");
+    return;
+  }
+  player.money -= cost;
+  if (player.backpackW <= player.backpackH) player.backpackW += 1;
+  else player.backpackH += 1;
+  addLog(`${player.name} のバックパックが ${player.backpackW}×${player.backpackH} になりました。`);
+  renderAll();
+}
+
+function closeShopOrForge() {
+  const player = currentPlayer();
+  if (!requirePlayerControl(player)) return;
+  state.phase = "turn";
+  finishAction();
+}
+
+function openForge(player) {
+  state.phase = "forge";
+  addLog(`${player.name} は鍛造マスで装備を整えられます。`);
+  renderAll();
+}
+
+function sellStashItem(uidValue) {
+  const player = currentPlayer();
+  if (!requirePlayerControl(player)) return;
+  const index = player?.stash.findIndex((item) => item.uid === uidValue) ?? -1;
+  if (!player || index < 0) return;
+  const [item] = player.stash.splice(index, 1);
+  const catalog = itemById(item.itemId);
+  const price = catalog.sell + (item.level - 1) * 15;
+  player.money += price;
+  addLog(`${player.name} は ${catalog.name} を売却し ${price}G を得ました。`);
+  renderAll();
+}
+
+function upgradePlacedItem(uidValue) {
+  const player = currentPlayer();
+  if (!requirePlayerControl(player)) return;
+  const placed = player?.backpack.find((item) => item.uid === uidValue);
+  if (!player || !placed) return;
+  const cost = 70 + placed.level * 45;
+  if (player.money < cost) {
+    addLog(`${player.name} は強化費用が足りません。`);
+    return;
+  }
+  player.money -= cost;
+  placed.level += 1;
+  addLog(`${player.name} は ${itemById(placed.itemId).name} を +${placed.level - 1} に強化しました。`);
+  renderAll();
+}
+
+function synthesizeItems() {
+  const player = currentPlayer();
+  if (!player) return;
+  if (!requirePlayerControl(player)) return;
+  const byRarity = {};
+  for (const item of player.stash) {
+    const rarity = itemById(item.itemId).rarity;
+    byRarity[rarity] = byRarity[rarity] || [];
+    byRarity[rarity].push(item);
+  }
+  const rarity = rarityOrder.find((key) => byRarity[key]?.length >= 2 && key !== "gold");
+  if (!rarity) {
+    addLog("合成できる同レアリティの手持ちアイテムがありません。");
+    return;
+  }
+  const used = byRarity[rarity].slice(0, 2);
+  player.stash = player.stash.filter((item) => !used.includes(item));
+  const nextRarity = rarityOrder[rarityOrder.indexOf(rarity) + 1];
+  const pool = itemCatalog.filter((item) => item.rarity === nextRarity);
+  const created = makeItem(choice(pool).id);
+  player.stash.push(created);
+  addLog(`${player.name} は ${rarityNames[rarity]}アイテム2つを合成し、${itemById(created.itemId).name} を得ました。`);
+  renderAll();
+}
+
+function openCombatChoice(player) {
+  state.phase = "combatChoice";
+  addLog(`${player.name} は戦闘相手を選びます。`);
+}
+
+function startBattle(playerIds, isFinal, title) {
+  clearBattleLoops();
+  state.phase = "battlePrep";
+  const participants = playerIds.map((id) => {
+    const player = state.players.find((p) => p.id === id);
+    const shield = placedItems(player).reduce((sum, placed) => {
+      const item = itemById(placed.itemId);
+      return sum + (item.shield || 0) + (placed.level - 1) * 2;
+    }, 0);
+    return {
+      playerId: player.id,
+      hp: Math.max(50, 100 - Math.round(player.nextBattlePenalty * 100)),
+      shield,
+      alive: true,
+      rank: null,
+      cooldowns: {},
+    };
+  });
+
+  state.battle = {
+    title,
+    isFinal,
+    prepEnd: Date.now() + 20000,
+    participants,
+    feed: [`${title} の準備時間が始まりました。`],
+  };
+  state.editorPlayerId = playerIds[0];
+  renderAll();
+  if (!online.enabled || online.isHost) {
+    battleTimerHandle = window.setTimeout(runBattle, 20000);
+  }
+}
+
+function runBattle() {
+  if (!state.battle) return;
+  if (state.phase !== "battlePrep") return;
+  if (online.enabled && !online.isHost) return;
+  state.phase = "battle";
+  state.battle.feed.unshift("戦闘開始。バックパック内のアイテムが自動で発動します。");
+  state.battle.participants.forEach((fighter) => {
+    const player = state.players.find((p) => p.id === fighter.playerId);
+    player.nextBattlePenalty = 0;
+  });
+  renderAll();
+  markChanged();
+  battleTickHandle = window.setInterval(battleTick, 700);
+}
+
+function battleTick() {
+  if (!state.battle) return;
+  if (online.enabled && !online.isHost) return;
+  const battle = state.battle;
+  const alive = battle.participants.filter((fighter) => fighter.alive);
+  if (alive.length <= 1) {
+    finishBattle();
+    return;
+  }
+
+  for (const fighter of alive) {
+    if (!fighter.alive) continue;
+    const player = state.players.find((p) => p.id === fighter.playerId);
+    const placed = placedItems(player);
+    const targetPool = battle.participants.filter((target) => target.alive && target.playerId !== player.id);
+    if (!targetPool.length) continue;
+    const target = choice(targetPool);
+    const targetPlayer = state.players.find((p) => p.id === target.playerId);
+    const weaken = placed.reduce((sum, entry) => sum + (itemById(entry.itemId).weaken || 0), 0);
+    if (weaken > 0) {
+      target.cooldowns.weaken = Math.max(target.cooldowns.weaken || 0, weaken);
+    }
+
+    for (const entry of placed) {
+      const item = itemById(entry.itemId);
+      const key = entry.uid;
+      fighter.cooldowns[key] = Math.max(0, (fighter.cooldowns[key] || 0) - 700);
+      if (fighter.cooldowns[key] > 0) continue;
+
+      if (item.damage || item.poison) {
+        fighter.cooldowns[key] = item.interval || 2500;
+        const damage = calculateDamage(player, entry, item);
+        const finalDamage = Math.max(1, Math.round(damage * (1 - (player.nextBattlePenalty || 0))));
+        applyDamage(target, finalDamage, `${player.name} の ${item.name}`);
+        if (item.healOnHit) {
+          fighter.hp = Math.min(100, fighter.hp + item.healOnHit + entry.level - 1);
+        }
+      }
+
+      if (item.heal) {
+        fighter.cooldowns[key] = item.interval || 3500;
+        const amount = item.heal + entry.level * 2;
+        fighter.hp = Math.min(100, fighter.hp + amount);
+        battle.feed.unshift(`${player.name} は ${item.name} で ${amount} 回復。`);
+      }
+    }
+
+    if (target.hp <= 0 && target.alive) {
+      target.alive = false;
+      target.rank = battle.participants.filter((entry) => !entry.rank).length;
+      battle.feed.unshift(`${targetPlayer.name} は倒れました。`);
+    }
+  }
+  markChanged();
+  renderBattle();
+}
+
+function calculateDamage(player, entry, item) {
+  let damage = (item.damage || item.poison || 0) + (entry.level - 1) * 4 + rarityValue(item.rarity);
+  const placed = placedItems(player);
+  const adjacentBoost = placed.reduce((sum, other) => {
+    const otherItem = itemById(other.itemId);
+    if (!otherItem.boost || other.uid === entry.uid) return sum;
+    return areAdjacent(entry, other) ? sum + otherItem.boost : sum;
+  }, 0);
+  const globalBoost = placed.reduce((sum, other) => sum + (itemById(other.itemId).boostAll || 0), 0);
+  damage *= 1 + adjacentBoost + globalBoost;
+  return damage;
+}
+
+function areAdjacent(a, b) {
+  const aCells = occupiedCells(a);
+  const bCells = occupiedCells(b);
+  return aCells.some((cellA) =>
+    bCells.some(
+      (cellB) => Math.abs(cellA.x - cellB.x) + Math.abs(cellA.y - cellB.y) === 1,
+    ),
+  );
+}
+
+function applyDamage(target, amount, label) {
+  const battle = state.battle;
+  const blocked = Math.min(target.shield, amount);
+  target.shield -= blocked;
+  target.hp -= amount - blocked;
+  const player = state.players.find((p) => p.id === target.playerId);
+  battle.feed.unshift(`${label} が ${player.name} に ${amount - blocked} ダメージ。`);
+}
+
+function finishBattle() {
+  clearBattleLoops();
+  if (!state.battle) return;
+  const battle = state.battle;
+  const winner = battle.participants.find((fighter) => fighter.alive) || battle.participants[0];
+  const winnerPlayer = state.players.find((player) => player.id === winner.playerId);
+  battle.feed.unshift(`${winnerPlayer.name} が勝利しました。`);
+
+  if (battle.isFinal) {
+    state.phase = "gameover";
+    addLog(`最終対決の勝者は ${winnerPlayer.name}。ゲーム終了です。`);
+  } else {
+    winnerPlayer.money += 90;
+    winnerPlayer.stash.push(randomItem("green"));
+    battle.participants.forEach((fighter) => {
+      if (fighter.playerId !== winner.playerId) {
+        const player = state.players.find((p) => p.id === fighter.playerId);
+        player.money = Math.max(0, player.money - 35);
+        player.nextBattlePenalty += 0.08;
+      }
+    });
+    state.phase = "battleResult";
+    addLog(`${winnerPlayer.name} が戦闘に勝利し、90G と報酬アイテムを得ました。`);
+  }
+  renderAll();
+}
+
+function continueAfterBattle() {
+  const player = currentPlayer();
+  if (player && !requirePlayerControl(player)) return;
+  state.battle = null;
+  state.phase = "turn";
+  markChanged();
+  advanceTurn();
+}
+
+function clearBattleLoops() {
+  window.clearTimeout(battleTimerHandle);
+  window.clearInterval(battleTickHandle);
+  battleTimerHandle = null;
+  battleTickHandle = null;
+}
+
+function canEditBackpack(player) {
+  if (!player) return false;
+  if (state.phase === "battlePrep" || state.phase === "battle") return true;
+  const active = currentPlayer();
+  return !active || player.id !== active.id || state.phase === "setup" || state.phase === "order";
+}
+
+function selectedEditorPlayer() {
+  return state.players.find((player) => player.id === state.editorPlayerId) || state.players[0];
+}
+
+function placedItems(player) {
+  return player?.backpack || [];
+}
+
+function occupiedCells(placed) {
+  const cells = [];
+  for (let y = placed.y; y < placed.y + placed.h; y += 1) {
+    for (let x = placed.x; x < placed.x + placed.w; x += 1) {
+      cells.push({ x, y });
+    }
+  }
+  return cells;
+}
+
+function canPlace(player, stashItem, x, y) {
+  const item = itemById(stashItem.itemId);
+  if (x + item.w > player.backpackW || y + item.h > player.backpackH) return false;
+  const newCells = [];
+  for (let yy = y; yy < y + item.h; yy += 1) {
+    for (let xx = x; xx < x + item.w; xx += 1) {
+      newCells.push(`${xx},${yy}`);
+    }
+  }
+  const occupied = new Set(player.backpack.flatMap((entry) => occupiedCells(entry).map((cell) => `${cell.x},${cell.y}`)));
+  return newCells.every((cell) => !occupied.has(cell));
+}
+
+function placeSelectedItem(x, y) {
+  const player = selectedEditorPlayer();
+  if (!player || !selectedItem || !canEditBackpack(player)) return;
+  if (online.enabled && !canControlPlayer(player)) {
+    localNotice("担当プレイヤーのバックパックだけ編集できます。");
+    return;
+  }
+  const stashIndex = player.stash.findIndex((item) => item.uid === selectedItem);
+  if (stashIndex < 0) return;
+  const stashItem = player.stash[stashIndex];
+  if (!canPlace(player, stashItem, x, y)) {
+    addLog("その場所にはアイテムを配置できません。");
+    return;
+  }
+  const item = itemById(stashItem.itemId);
+  player.stash.splice(stashIndex, 1);
+  player.backpack.push({
+    ...stashItem,
+    x,
+    y,
+    w: item.w,
+    h: item.h,
+  });
+  selectedItem = null;
+  addLog(`${player.name} は ${item.name} をバックパックに配置しました。`);
+  renderBackpack();
+}
+
+function removePlacedItem(uidValue) {
+  const player = selectedEditorPlayer();
+  if (!player || !canEditBackpack(player)) return;
+  if (online.enabled && !canControlPlayer(player)) {
+    localNotice("担当プレイヤーのバックパックだけ編集できます。");
+    return;
+  }
+  const index = player.backpack.findIndex((item) => item.uid === uidValue);
+  if (index < 0) return;
+  const [item] = player.backpack.splice(index, 1);
+  player.stash.push({ uid: item.uid, itemId: item.itemId, level: item.level });
+  addLog(`${player.name} は ${itemById(item.itemId).name} を手持ちに戻しました。`);
+  renderBackpack();
+}
+
+function renderAll() {
+  renderOnline();
+  renderSetupVisibility();
+  renderBoard();
+  renderPlayers();
+  renderTurn();
+  renderBackpack();
+  renderShop();
+  renderBattle();
+  renderLog();
+  els.phaseBadge.textContent = phaseLabel();
+  els.eventCounter.textContent = `次イベント: 全員${state.nextEventTurn}回行動後`;
+}
+
+function renderOnline() {
+  const seat = online.playerId ? ` / P${online.playerId}担当` : "";
+  if (online.enabled) {
+    els.onlineStatus.textContent = `${online.roomId}${seat}${online.isHost ? " / 部屋主" : ""}`;
+    els.roomCodeInput.value = online.roomId;
+    els.onlineHelp.textContent = `部屋コード ${online.roomId} で接続中です。他端末も同じ Firebase 設定と部屋コードで参加できます。`;
+  } else {
+    els.onlineStatus.textContent = "未接続";
+  }
+  els.seatSelect.value = online.playerId ? String(online.playerId) : "";
+}
+
+async function createOnlineRoom() {
+  try {
+    await setupOnlineFirebase();
+    online.roomId = makeRoomCode();
+    online.isHost = true;
+    online.enabled = true;
+    online.ready = true;
+    online.playerId = online.playerId || 1;
+    els.seatSelect.value = String(online.playerId);
+    localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
+    const { doc, setDoc, serverTimestamp } = online.modules;
+    online.roomRef = doc(online.db, "sugorokuRooms", online.roomId);
+    await setDoc(online.roomRef, {
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      hostId: online.clientId,
+      state: structuredCloneForSync(state),
+      updatedBy: online.clientId,
+    });
+    subscribeOnlineRoom();
+    setOnlineStatus(`部屋 ${online.roomId} を作成しました。`);
+    renderAll();
+  } catch (error) {
+    setOnlineStatus(`接続失敗: ${error.message}`);
+  }
+}
+
+async function joinOnlineRoom() {
+  try {
+    await setupOnlineFirebase();
+    const roomId = els.roomCodeInput.value.trim().toUpperCase();
+    if (!roomId) throw new Error("部屋コードを入力してください。");
+    const { doc, getDoc } = online.modules;
+    online.roomRef = doc(online.db, "sugorokuRooms", roomId);
+    const snapshot = await getDoc(online.roomRef);
+    if (!snapshot.exists()) throw new Error("部屋が見つかりません。");
+    const data = snapshot.data();
+    online.roomId = roomId;
+    online.isHost = data.hostId === online.clientId;
+    online.enabled = true;
+    online.ready = true;
+    if (data.state) applyRemoteState(data.state);
+    subscribeOnlineRoom();
+    setOnlineStatus(`部屋 ${roomId} に参加しました。`);
+    renderAll();
+  } catch (error) {
+    setOnlineStatus(`参加失敗: ${error.message}`);
+  }
+}
+
+function leaveOnlineRoom() {
+  if (online.unsubscribe) online.unsubscribe();
+  online.unsubscribe = null;
+  online.enabled = false;
+  online.ready = false;
+  online.roomId = "";
+  online.roomRef = null;
+  online.isHost = false;
+  window.clearTimeout(online.saveTimer);
+  clearBattleLoops();
+  setOnlineStatus("退出しました。");
+  renderAll();
+}
+
+async function setupOnlineFirebase() {
+  const configText = els.firebaseConfigInput.value.trim();
+  if (!configText) throw new Error("Firebase の Web 設定を貼り付けてください。");
+  localStorage.setItem(ONLINE_CONFIG_KEY, configText);
+  if (!online.modules) {
+    const appModule = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`);
+    const authModule = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`);
+    const firestoreModule = await import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore.js`);
+    online.modules = { ...appModule, ...authModule, ...firestoreModule };
+  }
+  if (!online.app) {
+    const { initializeApp, getAuth, signInAnonymously, getFirestore } = online.modules;
+    online.app = initializeApp(parseFirebaseConfig(configText));
+    online.auth = getAuth(online.app);
+    online.db = getFirestore(online.app);
+    await signInAnonymously(online.auth);
+  }
+}
+
+function subscribeOnlineRoom() {
+  if (online.unsubscribe) online.unsubscribe();
+  const { onSnapshot } = online.modules;
+  online.unsubscribe = onSnapshot(online.roomRef, (snapshot) => {
+    const data = snapshot.data();
+    if (!data?.state || data.updatedBy === online.clientId) return;
+    online.isHost = data.hostId === online.clientId;
+    applyRemoteState(data.state);
+  });
+}
+
+function applyRemoteState(remoteState) {
+  online.isApplyingRemote = true;
+  clearBattleLoops();
+  state = remoteState;
+  selectedItem = null;
+  scheduleOnlineBattleLoops();
+  renderAll();
+  online.isApplyingRemote = false;
+}
+
+function scheduleOnlineBattleLoops() {
+  if (!online.enabled || !online.isHost || !state.battle) return;
+  if (state.phase === "battlePrep") {
+    const delay = Math.max(0, state.battle.prepEnd - Date.now());
+    battleTimerHandle = window.setTimeout(runBattle, delay);
+  } else if (state.phase === "battle") {
+    battleTickHandle = window.setInterval(battleTick, 700);
+  }
+}
+
+function setOnlineStatus(text) {
+  els.onlineStatus.textContent = text;
+}
+
+function makeRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let index = 0; index < 6; index += 1) code += chars[rand(0, chars.length - 1)];
+  return code;
+}
+
+function parseFirebaseConfig(text) {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) return JSON.parse(trimmed);
+  const configIndex = trimmed.indexOf("firebaseConfig");
+  const searchStart = configIndex >= 0 ? configIndex : 0;
+  const objectText = extractObjectLiteral(trimmed, searchStart);
+  if (!objectText) throw new Error("Firebase 設定の { ... } 部分が見つかりません。");
+  return Function(`"use strict"; return (${objectText});`)();
+}
+
+function extractObjectLiteral(text, searchStart) {
+  const start = text.indexOf("{", searchStart);
+  if (start < 0) return "";
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return "";
+}
+
+function structuredCloneForSync(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function renderSetupVisibility() {
+  els.setupPanel.classList.toggle("hidden", state.phase !== "setup");
+}
+
+function renderBoard() {
+  els.boardGrid.innerHTML = "";
+  boardPattern.forEach((type, index) => {
+    const info = spaceTypes[type];
+    const space = document.createElement("div");
+    space.className = "space";
+    space.style.setProperty("--space-color", info.color);
+    space.innerHTML = `
+      <div class="space-number"><span>${index + 1}</span><span>${type === "goal" ? "終" : ""}</span></div>
+      <div class="space-name">${info.label}</div>
+      <div class="tokens"></div>
+    `;
+    const tokens = space.querySelector(".tokens");
+    state.players
+      .filter((player) => player.position === index)
+      .forEach((player) => {
+        const token = document.createElement("span");
+        token.className = "token";
+        token.style.background = player.color;
+        token.textContent = player.name.slice(-1);
+        tokens.append(token);
+      });
+    els.boardGrid.append(space);
+  });
+}
+
+function renderLegend() {
+  els.legend.innerHTML = "";
+  Object.entries(spaceTypes).forEach(([key, info]) => {
+    if (key === "start") return;
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.style.setProperty("--space-color", info.color);
+    item.innerHTML = `<span class="legend-chip"></span><span>${info.label}</span>`;
+    els.legend.append(item);
+  });
+}
+
+function renderPlayers() {
+  els.playersList.innerHTML = "";
+  state.players.forEach((player, index) => {
+    const row = document.createElement("div");
+    row.className = "player-row";
+    row.style.setProperty("--player-color", player.color);
+    const active = currentPlayer()?.id === player.id && ["turn", "shop", "forge"].includes(state.phase);
+    row.innerHTML = `
+      <div class="player-main">
+        <div class="player-name"><span class="color-dot"></span><span>${escapeHtml(player.name)}${active ? " / 行動中" : ""}</span></div>
+        <div class="round-pill">順${index + 1}${player.orderRoll ? ` / ${player.orderRoll}` : ""}</div>
+      </div>
+      <div class="stats">
+        <div class="stat">お金<strong>${player.money}G</strong></div>
+        <div class="stat">位置<strong>${player.position + 1}</strong></div>
+        <div class="stat">手持ち<strong>${player.stash.length}/3</strong></div>
+        <div class="stat">バッグ<strong>${player.backpackW}×${player.backpackH}</strong></div>
+        <div class="stat">行動<strong>${player.turnCount}</strong></div>
+        <div class="stat">次戦闘<strong>${player.nextBattlePenalty ? "不利" : "通常"}</strong></div>
+      </div>
+    `;
+    els.playersList.append(row);
+  });
+}
+
+function renderTurn() {
+  const player = currentPlayer();
+  els.diceFace.textContent = els.diceFace.textContent || "?";
+  els.actionArea.innerHTML = "";
+
+  if (state.phase === "setup") {
+    els.turnTitle.textContent = "ゲーム準備";
+    els.actionArea.innerHTML = `<div class="message-box">人数と名前を決めて、順番決定へ進んでください。</div>`;
+    return;
+  }
+
+  if (state.phase === "order") {
+    const target = state.players[state.orderIndex];
+    els.turnTitle.textContent = `${target.name} の順番決定`;
+    const button = actionButton("1〜100ダイスを振る", "primary-button", rollOrderDice, !canControlPlayer(target));
+    els.actionArea.append(button);
+    return;
+  }
+
+  if (state.phase === "turn") {
+    els.turnTitle.textContent = `${player.name} の行動ターン`;
+    els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player)));
+    const box = document.createElement("div");
+    box.className = "message-box";
+    box.textContent = "自分の行動ターン中は、自分のバックパック配置を変更できません。他プレイヤーの準備は可能です。";
+    els.actionArea.append(box);
+    return;
+  }
+
+  if (state.phase === "combatChoice") {
+    els.turnTitle.textContent = `${player.name} の戦闘相手選択`;
+    const opponents = livingPlayers().filter((other) => other.id !== player.id);
+    const box = document.createElement("div");
+    box.className = "message-box";
+    box.textContent = "戦う相手を選んでください。勝者はお金と報酬アイテムを受け取ります。";
+    els.actionArea.append(box);
+    const row = document.createElement("div");
+    row.className = "action-row";
+    opponents.forEach((opponent) => {
+      row.append(actionButton(opponent.name, "danger-button", () => startBattle([player.id, opponent.id], false, "戦闘マス"), !canControlPlayer(player)));
+    });
+    els.actionArea.append(row);
+    return;
+  }
+
+  if (state.phase === "shop" || state.phase === "forge") {
+    els.turnTitle.textContent = `${player.name} の${state.phase === "shop" ? "ショップ" : "鍛造"}`;
+    els.actionArea.append(actionButton("行動を終了", "secondary-button", closeShopOrForge, !canControlPlayer(player)));
+    return;
+  }
+
+  if (state.phase === "battlePrep") {
+    els.turnTitle.textContent = "戦闘準備";
+    els.actionArea.append(actionButton("すぐ戦闘開始", "danger-button", runBattle, false));
+    return;
+  }
+
+  if (state.phase === "battle") {
+    els.turnTitle.textContent = "戦闘中";
+    els.actionArea.innerHTML = `<div class="message-box">配置済みアイテムが自動で発動します。</div>`;
+    return;
+  }
+
+  if (state.phase === "battleResult") {
+    els.turnTitle.textContent = "戦闘結果";
+    els.actionArea.append(actionButton("次のプレイヤーへ", "primary-button", continueAfterBattle, player && !canControlPlayer(player)));
+    return;
+  }
+
+  if (state.phase === "gameover") {
+    els.turnTitle.textContent = "ゲーム終了";
+    els.actionArea.innerHTML = `<div class="message-box">勝者が決まりました。最初から遊ぶ場合は右上の R を押してください。</div>`;
+  }
+}
+
+function actionButton(label, className, handler, disabled = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.disabled = disabled;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+function renderBackpack() {
+  els.editorSelect.innerHTML = "";
+  state.players.forEach((player) => {
+    const option = document.createElement("option");
+    option.value = player.id;
+    option.textContent = player.name;
+    option.selected = player.id === state.editorPlayerId;
+    els.editorSelect.append(option);
+  });
+
+  const player = selectedEditorPlayer();
+  if (!player) {
+    els.stashList.innerHTML = "";
+    els.backpackGrid.innerHTML = "";
+    return;
+  }
+
+  const editable = canEditBackpack(player);
+  els.editLock.textContent = editable
+    ? "手持ちアイテムを選び、空きマスを押すと配置できます。配置済みアイテムは押すと手持ちへ戻ります。"
+    : "このプレイヤーは現在行動中のため、バックパック配置を変更できません。";
+
+  els.stashList.innerHTML = "";
+  player.stash.forEach((stashItem) => {
+    const item = itemById(stashItem.itemId);
+    const card = renderItemCard(stashItem, item);
+    card.disabled = !editable;
+    card.classList.toggle("selected", selectedItem === stashItem.uid);
+    card.addEventListener("click", () => {
+      selectedItem = selectedItem === stashItem.uid ? null : stashItem.uid;
+      renderBackpack();
+    });
+    els.stashList.append(card);
+  });
+  if (!player.stash.length) {
+    els.stashList.innerHTML = `<div class="message-box">手持ちアイテムはありません。</div>`;
+  }
+
+  els.backpackGrid.style.gridTemplateColumns = `repeat(${player.backpackW}, minmax(40px, 1fr))`;
+  els.backpackGrid.innerHTML = "";
+  for (let y = 0; y < player.backpackH; y += 1) {
+    for (let x = 0; x < player.backpackW; x += 1) {
+      const cell = document.createElement("button");
+      cell.className = "grid-cell";
+      cell.type = "button";
+      cell.textContent = `${x + 1},${y + 1}`;
+      const placed = player.backpack.find((entry) =>
+        occupiedCells(entry).some((spot) => spot.x === x && spot.y === y),
+      );
+      if (placed) {
+        const item = itemById(placed.itemId);
+        cell.classList.add("occupied", `rare-${item.rarity}`);
+        if (placed.x === x && placed.y === y) cell.classList.add("anchor");
+        cell.innerHTML = `<span class="cell-item">${escapeHtml(item.name)}<br>+${placed.level - 1}</span>`;
+        cell.addEventListener("click", () => removePlacedItem(placed.uid));
+      } else {
+        cell.disabled = !editable;
+        cell.addEventListener("click", () => placeSelectedItem(x, y));
+      }
+      els.backpackGrid.append(cell);
+    }
+  }
+
+  renderSelectedDetail(player);
+}
+
+function renderItemCard(stashItem, item) {
+  const card = document.createElement("button");
+  card.className = `item-card rare-${item.rarity}`;
+  card.type = "button";
+  card.innerHTML = `
+    <span class="rarity-dot"></span>
+    <span class="item-name">${escapeHtml(item.name)} +${stashItem.level - 1}</span>
+    <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item))}</span>
+  `;
+  card.addEventListener("mouseenter", () => showItemDetail(stashItem, item));
+  card.addEventListener("focus", () => showItemDetail(stashItem, item));
+  return card;
+}
+
+function shortEffect(item) {
+  if (item.damage) return `攻撃 ${item.damage}`;
+  if (item.heal) return `回復 ${item.heal}`;
+  if (item.income) return `収入 ${item.income}G`;
+  if (item.boost || item.boostAll) return "強化";
+  if (item.poison) return `毒 ${item.poison}`;
+  return "特殊";
+}
+
+function showItemDetail(stashItem, item) {
+  els.itemDetail.innerHTML = `<strong>${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
+}
+
+function renderSelectedDetail(player) {
+  const item =
+    player.stash.find((entry) => entry.uid === selectedItem) ||
+    player.backpack.find((entry) => entry.uid === selectedItem);
+  if (!item) return;
+  showItemDetail(item, itemById(item.itemId));
+}
+
+function renderShop() {
+  els.shopPanel.classList.toggle("hidden", !["shop", "forge"].includes(state.phase));
+  els.shopContent.innerHTML = "";
+  const player = currentPlayer();
+  if (!player) return;
+
+  if (state.phase === "shop") {
+    els.shopTitle.textContent = "ショップ";
+    const grid = document.createElement("div");
+    grid.className = "shop-grid";
+    state.pendingShop.forEach((shopItem) => {
+      const item = itemById(shopItem.itemId);
+      const price = Math.floor(item.price * (player.shopDiscount ? 0.5 : 1));
+      const card = document.createElement("div");
+      card.className = "shop-item";
+      card.innerHTML = `<h3>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}</p>`;
+      card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyShopItem(shopItem.uid)));
+      grid.append(card);
+    });
+    els.shopContent.append(grid);
+    els.shopContent.append(actionButton("バックパック拡張を購入", "secondary-button", buyBackpackExpansion));
+  } else if (state.phase === "forge") {
+    els.shopTitle.textContent = "鍛造";
+    const grid = document.createElement("div");
+    grid.className = "shop-grid";
+    player.stash.forEach((stashItem) => {
+      const item = itemById(stashItem.itemId);
+      const card = document.createElement("div");
+      card.className = "shop-item";
+      const sell = item.sell + (stashItem.level - 1) * 15;
+      card.innerHTML = `<h3>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / 売却 ${sell}G</p>`;
+      card.append(actionButton("売却", "secondary-button", () => sellStashItem(stashItem.uid)));
+      grid.append(card);
+    });
+    player.backpack.forEach((entry) => {
+      const item = itemById(entry.itemId);
+      const card = document.createElement("div");
+      card.className = "shop-item";
+      card.innerHTML = `<h3>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G</p>`;
+      card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid)));
+      grid.append(card);
+    });
+    els.shopContent.append(grid);
+    els.shopContent.append(actionButton("同レア2個を合成", "secondary-button", synthesizeItems));
+  }
+}
+
+function renderBattle() {
+  els.battlePanel.classList.toggle("hidden", !["battlePrep", "battle", "battleResult", "final", "gameover"].includes(state.phase) && !state.battle);
+  els.battleArena.innerHTML = "";
+  if (!state.battle) {
+    els.battleTimer.textContent = "待機";
+    return;
+  }
+
+  const battle = state.battle;
+  if (state.phase === "battlePrep" || state.phase === "final") {
+    const seconds = Math.max(0, Math.ceil((battle.prepEnd - Date.now()) / 1000));
+    els.battleTimer.textContent = `準備 ${seconds}s`;
+  } else if (state.phase === "battle") {
+    els.battleTimer.textContent = "自動戦闘";
+  } else {
+    els.battleTimer.textContent = "結果";
+  }
+
+  battle.participants.forEach((fighter) => {
+    const player = state.players.find((p) => p.id === fighter.playerId);
+    const row = document.createElement("div");
+    row.className = "fighter";
+    row.innerHTML = `
+      <div class="fighter-head"><span>${escapeHtml(player.name)}</span><span>${Math.max(0, Math.round(fighter.hp))} HP / 盾 ${fighter.shield}</span></div>
+      <div class="hp-bar"><span class="hp-fill" style="--hp:${Math.max(0, fighter.hp)}%"></span></div>
+    `;
+    els.battleArena.append(row);
+  });
+
+  const feed = document.createElement("div");
+  feed.className = "battle-feed";
+  feed.innerHTML = battle.feed.slice(0, 12).map((line) => `<div>${escapeHtml(line)}</div>`).join("");
+  els.battleArena.append(feed);
+}
+
+function renderLog() {
+  els.logList.innerHTML = state.log
+    .slice(-60)
+    .map((entry) => `<div class="log-entry">${escapeHtml(entry.text)}</div>`)
+    .join("");
+}
+
+function saveGame() {
+  localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  addLog("ゲームをブラウザに保存しました。");
+}
+
+function loadGame() {
+  const saved = localStorage.getItem(SAVE_KEY);
+  if (!saved) {
+    addLog("保存データがありません。");
+    return;
+  }
+  clearBattleLoops();
+  state = JSON.parse(saved);
+  selectedItem = null;
+  addLog("保存データを読み込みました。");
+  renderAll();
+}
+
+function resetGame() {
+  clearBattleLoops();
+  state = newGameState();
+  selectedItem = null;
+  els.diceFace.textContent = "?";
+  addLog("ゲームをリセットしました。");
+  renderSetup();
+  renderAll();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+window.addEventListener("beforeunload", () => {
+  window.clearInterval(renderTimerHandle);
+  clearBattleLoops();
+});
+
+init();
