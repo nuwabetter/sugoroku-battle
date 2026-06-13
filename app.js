@@ -1,6 +1,8 @@
 "use strict";
 
-const BOARD_LENGTH = 40;
+const DEFAULT_BOARD_SIZE = 40;
+const MIN_BOARD_SIZE = 24;
+const MAX_BOARD_SIZE = 80;
 const SAVE_KEY = "sugoroku-backpack-battle-save";
 const ONLINE_CONFIG_KEY = "sugoroku-firebase-config";
 const ONLINE_SEAT_KEY = "sugoroku-online-seat";
@@ -271,6 +273,15 @@ const boardPattern = [
   "goal",
 ];
 
+const randomSpaceWeights = [
+  ["plus", 46],
+  ["minus", 15],
+  ["shop", 13],
+  ["lucky", 9],
+  ["combat", 9],
+  ["forge", 8],
+];
+
 let state = newGameState();
 let selectedItem = null;
 let battleTimerHandle = null;
@@ -307,6 +318,8 @@ const els = {
   onlineHelp: document.getElementById("onlineHelp"),
   setupPanel: document.getElementById("setupPanel"),
   playerCountGroup: document.getElementById("playerCountGroup"),
+  boardSizeInput: document.getElementById("boardSizeInput"),
+  boardSizeValue: document.getElementById("boardSizeValue"),
   nameFields: document.getElementById("nameFields"),
   startGameButton: document.getElementById("startGameButton"),
   boardGrid: document.getElementById("boardGrid"),
@@ -339,6 +352,8 @@ function newGameState() {
   return {
     phase: "setup",
     setupCount: 3,
+    boardSize: DEFAULT_BOARD_SIZE,
+    board: createBoardPattern(DEFAULT_BOARD_SIZE),
     names: ["プレイヤー1", "プレイヤー2", "プレイヤー3", "プレイヤー4"],
     players: [],
     orderIndex: 0,
@@ -363,8 +378,69 @@ function choice(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+function weightedChoice(entries) {
+  const total = entries.reduce((sum, entry) => sum + entry[1], 0);
+  let roll = Math.random() * total;
+  for (const [value, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return value;
+  }
+  return entries[entries.length - 1][0];
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
+  const safeSize = clamp(Number(size) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+  const board = ["start"];
+  for (let index = 1; index < safeSize - 1; index += 1) {
+    board.push(weightedChoice(randomSpaceWeights));
+  }
+  board.push("goal");
+  ensureMinimumSpaces(board);
+  return board;
+}
+
+function ensureMinimumSpaces(board) {
+  const minimums = {
+    plus: Math.ceil(board.length * 0.34),
+    shop: Math.max(2, Math.floor(board.length / 18)),
+    lucky: Math.max(2, Math.floor(board.length / 24)),
+    combat: Math.max(2, Math.floor(board.length / 24)),
+    forge: Math.max(1, Math.floor(board.length / 28)),
+  };
+  Object.entries(minimums).forEach(([type, minimum]) => {
+    while (countSpaces(board, type) < minimum) {
+      const index = rand(1, board.length - 2);
+      board[index] = type;
+    }
+  });
+}
+
+function countSpaces(board, type) {
+  return board.filter((space) => space === type).length;
+}
+
+function activeBoard() {
+  if (!Array.isArray(state.board) || state.board.length < MIN_BOARD_SIZE) {
+    state.board = createBoardPattern(state.boardSize || DEFAULT_BOARD_SIZE);
+  }
+  return state.board;
+}
+
+function normalizeGameState(gameState) {
+  gameState.boardSize = clamp(Number(gameState.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+  if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
+    gameState.board = createBoardPattern(gameState.boardSize);
+  }
+  if (Array.isArray(gameState.players)) {
+    gameState.players.forEach((player) => {
+      player.position = clamp(Number(player.position) || 0, 0, gameState.board.length - 1);
+    });
+  }
+  return gameState;
 }
 
 function itemById(id) {
@@ -541,6 +617,17 @@ function bindEvents() {
     markChanged();
   });
 
+  els.boardSizeInput.addEventListener("input", () => {
+    if (!requireSetupControl()) {
+      els.boardSizeInput.value = state.boardSize;
+      return;
+    }
+    state.boardSize = clamp(Number(els.boardSizeInput.value), MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+    state.board = createBoardPattern(state.boardSize);
+    markChanged();
+    renderAll();
+  });
+
   els.startGameButton.addEventListener("click", startOrderPhase);
   els.editorSelect.addEventListener("change", () => {
     state.editorPlayerId = Number(els.editorSelect.value);
@@ -585,11 +672,16 @@ function renderSetup() {
     label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${setupEditable ? "" : "disabled"} />`;
     els.nameFields.append(label);
   }
+  els.boardSizeInput.value = state.boardSize || DEFAULT_BOARD_SIZE;
+  els.boardSizeInput.disabled = !setupEditable;
+  els.boardSizeValue.textContent = `${state.boardSize || DEFAULT_BOARD_SIZE}マス`;
   els.startGameButton.disabled = !setupEditable;
 }
 
 function startOrderPhase() {
   if (!requireSetupControl()) return;
+  state.boardSize = clamp(Number(state.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
+  state.board = createBoardPattern(state.boardSize);
   state.players = createPlayers();
   state.phase = "order";
   state.orderIndex = 0;
@@ -651,7 +743,7 @@ function rollMoveDice() {
   player.rollBonus = 0;
   const total = baseRoll + bonus;
   els.diceFace.textContent = total;
-  player.position = clamp(player.position + total, 0, BOARD_LENGTH - 1);
+  player.position = clamp(player.position + total, 0, activeBoard().length - 1);
   player.turnCount += 1;
   addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
   resolveSpace(player);
@@ -659,7 +751,7 @@ function rollMoveDice() {
 }
 
 function resolveSpace(player) {
-  const type = boardPattern[player.position];
+  const type = activeBoard()[player.position];
   const name = spaceTypes[type].label;
   addLog(`${player.name} は「${name}」に止まりました。`);
 
@@ -1260,7 +1352,7 @@ function subscribeOnlineRoom() {
 function applyRemoteState(remoteState) {
   online.isApplyingRemote = true;
   clearBattleLoops();
-  state = remoteState;
+  state = normalizeGameState(remoteState);
   selectedItem = null;
   scheduleOnlineBattleLoops();
   renderAll();
@@ -1338,7 +1430,10 @@ function renderSetupVisibility() {
 
 function renderBoard() {
   els.boardGrid.innerHTML = "";
-  boardPattern.forEach((type, index) => {
+  const board = activeBoard();
+  const columns = board.length >= 64 ? 10 : board.length >= 42 ? 8 : 6;
+  els.boardGrid.style.gridTemplateColumns = `repeat(${columns}, minmax(58px, 1fr))`;
+  board.forEach((type, index) => {
     const info = spaceTypes[type];
     const space = document.createElement("div");
     space.className = "space";
@@ -1686,7 +1781,7 @@ function loadGame() {
     return;
   }
   clearBattleLoops();
-  state = JSON.parse(saved);
+  state = normalizeGameState(JSON.parse(saved));
   selectedItem = null;
   addLog("保存データを読み込みました。");
   renderAll();

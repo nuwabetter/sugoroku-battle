@@ -232,6 +232,27 @@ h2 {
   color: #fff;
 }
 
+.range-field {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.range-field span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.range-field input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .name-fields {
   display: grid;
   gap: 8px;
