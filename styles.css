@@ -25,7 +25,9 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: linear-gradient(180deg, #fffdf7 0%, #f5e6aa 48%, #fffaf0 100%);
+  background:
+    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.85), transparent 28%),
+    linear-gradient(135deg, #fff8dc 0%, #d7a514 42%, #7c5a0b 100%);
   color: var(--ink);
   font-family:
     "DotGothic16", "MS Gothic", "Yu Gothic UI", "Meiryo", monospace;
@@ -53,6 +55,7 @@ select:disabled {
   max-width: 1920px;
   margin: 0 auto;
   padding: 14px;
+  padding-bottom: 82px;
 }
 
 .topbar {
@@ -61,6 +64,28 @@ select:disabled {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+body.game-view .topbar > div:first-child {
+  display: none;
+}
+
+body.game-view .topbar {
+  justify-content: center;
+  margin: 0;
+}
+
+body.game-view .top-actions {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  z-index: 20;
+  transform: translateX(-50%);
+  border: 3px solid #211907;
+  border-radius: 999px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 7px 0 rgba(33, 25, 7, 0.22);
 }
 
 h1,
@@ -151,9 +176,7 @@ body.game-view .online-panel {
   overflow: hidden;
   padding: 12px;
   min-height: auto;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 245, 196, 0.18)),
-    url("./assets/pixel-map.png") center / cover no-repeat;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 241, 176, 0.74));
   image-rendering: pixelated;
 }
 
@@ -161,7 +184,7 @@ body.game-view .online-panel {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.16) 28%, rgba(255, 255, 255, 0.08) 72%, rgba(255, 255, 255, 0.58));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.04) 28%, rgba(255, 255, 255, 0.02) 72%, rgba(255, 255, 255, 0.32));
   pointer-events: none;
 }
 
@@ -399,8 +422,8 @@ textarea {
   overflow-y: hidden;
   width: 100%;
   max-width: 100%;
-  min-height: 260px;
-  padding: 126px 0 18px;
+  min-height: 158px;
+  padding: 0;
   scroll-behavior: smooth;
   scrollbar-color: #d9a514 rgba(255, 255, 255, 0.65);
   border-radius: 8px;
@@ -413,7 +436,11 @@ textarea {
   max-width: none;
   gap: 18px;
   align-items: center;
-  padding: 14px 26px 20px;
+  min-height: 158px;
+  padding: 62px 26px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 226, 122, 0.14)),
+    url("./assets/pixel-map.png") left center / auto 100% repeat-x;
 }
 
 .space {
@@ -424,12 +451,9 @@ textarea {
   flex: 0 0 62px;
   place-items: center;
   overflow: visible;
-  border: 4px solid #211907;
+  border: 5px dotted #211907;
   border-radius: 50%;
-  background:
-    radial-gradient(circle at 28% 25%, rgba(255, 255, 255, 0.95) 0 7px, transparent 8px),
-    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.22) 0 4px, transparent 4px 8px),
-    var(--space-color);
+  background: var(--space-color);
   padding: 6px;
   color: #fff;
   box-shadow:
@@ -467,8 +491,8 @@ textarea {
 
 .tokens {
   position: absolute;
-  right: -8px;
-  bottom: -8px;
+  right: -14px;
+  bottom: -14px;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -478,13 +502,13 @@ textarea {
 
 .token {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border: 3px solid #fff;
   border-radius: 50%;
   color: #2e2616;
-  font-size: 17px;
+  font-size: 24px;
   font-weight: 900;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
 }
@@ -514,14 +538,15 @@ textarea {
 
 .players-list {
   display: grid;
-  gap: 9px;
-  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 7px;
+  margin-top: 8px;
 }
 
 .player-row {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px;
+  padding: 7px;
   background: var(--panel-soft);
 }
 
@@ -548,13 +573,13 @@ textarea {
 
 .avatar-dot {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 46px;
+  height: 46px;
   place-items: center;
   border: 3px solid #fff;
   border-radius: 50%;
   box-shadow: 0 3px 0 rgba(46, 38, 22, 0.18);
-  font-size: 18px;
+  font-size: 27px;
 }
 
 .stats {
@@ -562,6 +587,33 @@ textarea {
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   margin-top: 9px;
+}
+
+.compact-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.compact-stats span {
+  min-height: 24px;
+  border: 1px solid rgba(216, 184, 71, 0.7);
+  border-radius: 7px;
+  background: #fff;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.status-panel {
+  margin-bottom: 0;
+}
+
+.turn-panel {
+  margin-top: -12px;
+  border-top-style: dashed;
+  box-shadow: 0 5px 0 rgba(119, 89, 10, 0.12);
 }
 
 .stat {
@@ -614,10 +666,7 @@ textarea {
 }
 
 .edit-lock {
-  margin: 10px 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
+  display: none;
 }
 
 .stash {
@@ -763,6 +812,10 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.item-detail:empty {
+  display: none;
 }
 
 .shop-content {

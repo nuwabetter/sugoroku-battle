@@ -344,6 +344,7 @@ const els = {
   legend: document.getElementById("legend"),
   phaseBadge: document.getElementById("phaseBadge"),
   eventCounter: document.getElementById("eventCounter"),
+  statusPanel: document.getElementById("statusPanel"),
   playersList: document.getElementById("playersList"),
   turnTitle: document.getElementById("turnTitle"),
   diceFace: document.getElementById("diceFace"),
@@ -716,7 +717,7 @@ function renderSetup() {
   const setupEditable = canControlSetup();
   [...els.playerCountGroup.querySelectorAll("button")].forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.count) === state.setupCount);
-    button.disabled = !setupEditable;
+    button.disabled = !setupEditable || online.enabled;
   });
 
   els.nameFields.innerHTML = "";
@@ -1346,6 +1347,18 @@ function renderOnline() {
   els.seatSelect.disabled = online.enabled;
 }
 
+function participantCountFromSeats(seats) {
+  return new Set(
+    Object.values(seats || {})
+      .map((value) => Number(value))
+      .filter((value) => value >= 1 && value <= 4),
+  ).size;
+}
+
+function setupCountFromSeats(seats) {
+  return clamp(Math.max(2, participantCountFromSeats(seats)), 2, 4);
+}
+
 async function createOnlineRoom() {
   try {
     await setupOnlineFirebase();
@@ -1354,6 +1367,7 @@ async function createOnlineRoom() {
     online.enabled = true;
     online.ready = true;
     online.playerId = 1;
+    state.setupCount = setupCountFromSeats({ [online.clientId]: 1 });
     els.seatSelect.value = String(online.playerId);
     localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
     const { doc, setDoc, serverTimestamp } = online.modules;
@@ -1432,7 +1446,12 @@ async function claimOnlineSeat() {
         }
       }
       if (playerId) {
-        transaction.set(online.roomRef, { seats: { ...seats, [online.clientId]: playerId } }, { merge: true });
+        const nextSeats = { ...seats, [online.clientId]: playerId };
+        const nextState =
+          data.state?.phase === "setup"
+            ? { ...data.state, setupCount: setupCountFromSeats(nextSeats) }
+            : data.state;
+        transaction.set(online.roomRef, { seats: nextSeats, state: nextState }, { merge: true });
       }
     }
     result = { ...data, playerId };
@@ -1450,7 +1469,11 @@ async function releaseOnlineSeat() {
       const data = snapshot.data();
       const seats = { ...(data.seats || {}) };
       delete seats[online.clientId];
-      transaction.set(online.roomRef, { seats }, { merge: true });
+      const nextState =
+        data.state?.phase === "setup"
+          ? { ...data.state, setupCount: setupCountFromSeats(seats) }
+          : data.state;
+      transaction.set(online.roomRef, { seats, state: nextState }, { merge: true });
     });
   } catch (error) {
     setOnlineStatus(`退出時の席解除に失敗: ${error.message}`);
@@ -1481,8 +1504,12 @@ function subscribeOnlineRoom() {
   const { onSnapshot } = online.modules;
   online.unsubscribe = onSnapshot(online.roomRef, (snapshot) => {
     const data = snapshot.data();
-    if (!data?.state || data.updatedBy === online.clientId) return;
+    if (!data?.state) return;
     online.isHost = data.hostId === online.clientId;
+    if (data.state.phase === "setup") {
+      data.state.setupCount = setupCountFromSeats(data.seats || {});
+    }
+    if (data.updatedBy === online.clientId && state.phase !== "setup") return;
     applyRemoteState(data.state);
   });
 }
@@ -1630,13 +1657,13 @@ function renderPlayers() {
         <div class="player-name"><span class="avatar-dot" style="background:${player.color}">${player.avatar || ""}</span><span>${escapeHtml(player.name)}${active ? " / 行動中" : ""}</span></div>
         <div class="round-pill">順${index + 1}${player.orderRoll ? ` / ${player.orderRoll}` : ""}</div>
       </div>
-      <div class="stats">
-        <div class="stat">お金<strong>${player.money}G</strong></div>
-        <div class="stat">位置<strong>${player.position + 1}</strong></div>
-        <div class="stat">手持ち<strong>${player.stash.length}/3</strong></div>
-        <div class="stat">バッグ<strong>${player.backpackW}×${player.backpackH}</strong></div>
-        <div class="stat">行動<strong>${player.turnCount}</strong></div>
-        <div class="stat">次戦闘<strong>${player.nextBattlePenalty ? "不利" : "通常"}</strong></div>
+      <div class="stats compact-stats">
+        <span>💰 ${player.money}G</span>
+        <span>📍 ${player.position + 1}</span>
+        <span>🎒 ${player.stash.length}/3</span>
+        <span>▦ ${player.backpackW}×${player.backpackH}</span>
+        <span>↻ ${player.turnCount}</span>
+        <span>${player.nextBattlePenalty ? "⚠ 不利" : "✓ 通常"}</span>
       </div>
     `;
     els.playersList.append(row);
@@ -1730,6 +1757,7 @@ function actionButton(label, className, handler, disabled = false) {
 
 function renderBackpack() {
   els.editorSelect.innerHTML = "";
+  els.itemDetail.textContent = "";
   const visiblePlayers =
     online.enabled && online.playerId
       ? state.players.filter((player) => player.id === online.playerId)
@@ -1749,15 +1777,15 @@ function renderBackpack() {
   if (!player || (online.enabled && !canControlPlayer(player))) {
     els.stashList.innerHTML = "";
     els.backpackGrid.innerHTML = "";
-    els.itemDetail.textContent = "オンライン中、他プレイヤーのバックパックは非公開です。";
+    els.itemDetail.textContent = "";
     els.editLock.textContent = online.enabled ? "担当プレイヤーを選ぶと自分のバックパックだけ確認できます。" : "";
     return;
   }
 
   const editable = canEditBackpack(player);
   els.editLock.textContent = editable
-    ? "手持ちアイテムを選び、空きマスを押すと配置できます。配置済みアイテムは押すと手持ちへ戻ります。"
-    : "このプレイヤーは現在行動中のため、バックパック配置を変更できません。";
+    ? ""
+    : "";
 
   els.stashList.innerHTML = "";
   player.stash.forEach((stashItem) => {
