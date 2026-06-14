@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const DEFAULT_BOARD_SIZE = 40;
 const MIN_BOARD_SIZE = 24;
@@ -302,6 +302,10 @@ const randomSpaceWeights = [
 
 let state = newGameState();
 let selectedItem = null;
+let isAnimatingMove = false;
+let uiEffects = {
+  space: null,
+};
 let battleTimerHandle = null;
 let battleTickHandle = null;
 let renderTimerHandle = null;
@@ -382,6 +386,9 @@ function newGameState() {
     editorPlayerId: null,
     pendingShop: [],
     battle: null,
+    effects: {
+      itemGains: [],
+    },
     nextEventTurn: 2,
     log: [],
   };
@@ -411,6 +418,21 @@ function weightedChoice(entries) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function ensureEffects(targetState = state) {
+  if (!targetState.effects || typeof targetState.effects !== "object") {
+    targetState.effects = { itemGains: [] };
+  }
+  if (!Array.isArray(targetState.effects.itemGains)) {
+    targetState.effects.itemGains = [];
+  }
+  targetState.effects.itemGains = targetState.effects.itemGains.slice(-16);
+  return targetState.effects;
 }
 
 function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
@@ -452,11 +474,51 @@ function activeBoard() {
   return state.board;
 }
 
+function queueItemGain(player, items) {
+  if (!player || !items?.length) return;
+  const effects = ensureEffects();
+  const icons = items.map((item) => itemIcons[item.itemId] || "?").join("");
+  effects.itemGains.push({
+    id: uid(),
+    playerId: player.id,
+    icons,
+    at: Date.now(),
+  });
+  effects.itemGains = effects.itemGains.slice(-16);
+  window.setTimeout(renderBoard, 1800);
+}
+
+function recentItemGainFor(player) {
+  if (!player || !canControlPlayer(player)) return null;
+  const now = Date.now();
+  const effects = ensureEffects();
+  return [...effects.itemGains]
+    .reverse()
+    .find((gain) => gain.playerId === player.id && now - gain.at < 1800);
+}
+
+function showSpaceEffect(position, type) {
+  uiEffects.space = {
+    id: uid(),
+    position,
+    type,
+  };
+  renderBoard();
+  const effectId = uiEffects.space.id;
+  window.setTimeout(() => {
+    if (uiEffects.space?.id === effectId) {
+      uiEffects.space = null;
+      renderBoard();
+    }
+  }, 900);
+}
+
 function normalizeGameState(gameState) {
   gameState.boardSize = clamp(Number(gameState.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
     gameState.board = createBoardPattern(gameState.boardSize);
   }
+  ensureEffects(gameState);
   if (!Array.isArray(gameState.avatars)) {
     gameState.avatars = ["😀", "😎", "🤠", "🧙"];
   }
@@ -508,6 +570,7 @@ function randomItem(minimum = "white") {
 function addRandomItems(player, count, minimum = "white") {
   const items = Array.from({ length: count }, () => randomItem(minimum));
   player.stash.push(...items);
+  queueItemGain(player, items);
   return items;
 }
 
@@ -791,18 +854,29 @@ function purgeOverflow(player) {
   addLog(`${player.name} の手持ちが多すぎたため、${removed.join("、")} が失われました。`);
 }
 
-function rollMoveDice() {
+async function rollMoveDice() {
   const player = currentPlayer();
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
+  if (isAnimatingMove) return;
   const baseRoll = rand(1, 6);
   const bonus = player.rollBonus || 0;
   player.rollBonus = 0;
   const total = baseRoll + bonus;
+  const start = player.position;
+  const destination = clamp(start + total, 0, activeBoard().length - 1);
   els.diceFace.textContent = total;
-  player.position = clamp(player.position + total, 0, activeBoard().length - 1);
+  isAnimatingMove = true;
+  for (let position = start + 1; position <= destination; position += 1) {
+    player.position = position;
+    renderBoard();
+    await sleep(180);
+  }
+  if (destination === start) renderBoard();
+  isAnimatingMove = false;
   player.turnCount += 1;
   addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
+  showSpaceEffect(player.position, activeBoard()[player.position]);
   resolveSpace(player);
   renderAll();
 }
@@ -846,6 +920,7 @@ function resolveSpace(player) {
   } else if (type === "goal") {
     const prizes = [randomItem("purple"), randomItem("gold")];
     player.stash.push(...prizes);
+    queueItemGain(player, prizes);
     addLog(`${player.name} がゴールに到達し、${prizes.map((item) => itemById(item.itemId).name).join("、")} を得ました。最終対決へ移行します。`);
     startBattle(livingPlayers().map((p) => p.id), true, "最終対決");
   } else {
@@ -928,6 +1003,7 @@ function buyShopItem(uidValue) {
   player.money -= price;
   player.shopDiscount = false;
   player.stash.push(item);
+  queueItemGain(player, [item]);
   state.pendingShop.splice(index, 1);
   addLog(`${player.name} は ${catalog.name} を ${price}G で購入しました。`);
   renderAll();
@@ -1016,6 +1092,7 @@ function synthesizeItems() {
   const pool = itemCatalog.filter((item) => item.rarity === nextRarity);
   const created = makeItem(choice(pool).id);
   player.stash.push(created);
+  queueItemGain(player, [created]);
   addLog(`${player.name} は ${rarityNames[rarity]}アイテム2つを合成し、${itemById(created.itemId).name} を得ました。`);
   renderAll();
 }
@@ -1603,13 +1680,13 @@ function renderBoard() {
     const info = spaceTypes[type];
     const space = document.createElement("div");
     space.className = "space";
+    space.classList.add(`space-${type}`);
     if (currentPlayer()?.position === index) space.classList.add("active-space");
+    if (uiEffects.space?.position === index) {
+      space.classList.add("space-effect", `effect-${uiEffects.space.type}`);
+    }
     space.style.setProperty("--space-color", info.color);
-    space.innerHTML = `
-      <div class="space-number"><span>${index + 1}</span><span>${type === "goal" ? "終" : ""}</span></div>
-      <div class="space-name">${info.label}</div>
-      <div class="tokens"></div>
-    `;
+    space.innerHTML = `<div class="tokens"></div>`;
     const tokens = space.querySelector(".tokens");
     state.players
       .filter((player) => player.position === index)
@@ -1617,7 +1694,17 @@ function renderBoard() {
         const token = document.createElement("span");
         token.className = "token";
         token.style.background = player.color;
-        token.textContent = player.avatar || player.name.slice(-1);
+        const avatar = document.createElement("span");
+        avatar.className = "token-avatar";
+        avatar.textContent = player.avatar || player.name.slice(-1);
+        token.append(avatar);
+        const gain = recentItemGainFor(player);
+        if (gain) {
+          const popup = document.createElement("span");
+          popup.className = "item-gain-pop";
+          popup.textContent = gain.icons;
+          token.append(popup);
+        }
         tokens.append(token);
       });
     els.boardGrid.append(space);
@@ -1690,7 +1777,7 @@ function renderTurn() {
 
   if (state.phase === "turn") {
     els.turnTitle.textContent = `${player.name} の行動ターン`;
-    els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player)));
+    els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player) || isAnimatingMove));
     return;
   }
 
@@ -1804,7 +1891,7 @@ function renderBackpack() {
       const cell = document.createElement("button");
       cell.className = "grid-cell";
       cell.type = "button";
-      cell.textContent = `${x + 1},${y + 1}`;
+      cell.setAttribute("aria-label", `slot ${x + 1}-${y + 1}`);
       const placed = player.backpack.find((entry) =>
         occupiedCells(entry).some((spot) => spot.x === x && spot.y === y),
       );
