@@ -302,6 +302,8 @@ const randomSpaceWeights = [
 
 let state = newGameState();
 let selectedItem = null;
+let placementPreview = null;
+let touchDrag = null;
 let isAnimatingMove = false;
 let uiEffects = {
   space: null,
@@ -373,11 +375,13 @@ const els = {
 };
 
 function newGameState() {
+  const board = createBoardPattern(DEFAULT_BOARD_SIZE);
   return {
     phase: "setup",
     setupCount: 3,
     boardSize: DEFAULT_BOARD_SIZE,
-    board: createBoardPattern(DEFAULT_BOARD_SIZE),
+    board,
+    branches: createBoardBranches(board),
     names: ["プレイヤー1", "プレイヤー2", "プレイヤー3", "プレイヤー4"],
     avatars: ["😀", "😎", "🤠", "🧙"],
     players: [],
@@ -390,7 +394,7 @@ function newGameState() {
       itemGains: [],
       battleActions: [],
     },
-    nextEventTurn: 2,
+    nextEventTurn: 1,
     log: [],
   };
 }
@@ -452,6 +456,34 @@ function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
   return board;
 }
 
+function createBoardBranches(board) {
+  const length = Array.isArray(board) ? board.length : Number(board) || DEFAULT_BOARD_SIZE;
+  const count = clamp(Math.floor(length / 45), 1, 4);
+  const branches = [];
+  const used = new Set();
+  for (let index = 0; index < count; index += 1) {
+    const startMin = Math.max(6, Math.floor(length * 0.18));
+    const startMax = Math.max(startMin, length - 8);
+    let from = rand(startMin, startMax);
+    let guard = 0;
+    while (used.has(from) && guard < 20) {
+      from = rand(startMin, startMax);
+      guard += 1;
+    }
+    used.add(from);
+    const branchLength = rand(3, 5);
+    branches.push({
+      from,
+      side: index % 2 === 0 ? "top" : "bottom",
+      spaces: Array.from({ length: branchLength }, (_, branchIndex) => {
+        if (branchIndex === branchLength - 1) return weightedChoice([["plus", 55], ["lucky", 25], ["forge", 12], ["shop", 8]]);
+        return weightedChoice(randomSpaceWeights.filter(([type]) => type !== "combat"));
+      }),
+    });
+  }
+  return branches.sort((a, b) => a.from - b.from);
+}
+
 function ensureMinimumSpaces(board) {
   const minimums = {
     plus: Math.ceil(board.length * 0.34),
@@ -475,8 +507,15 @@ function countSpaces(board, type) {
 function activeBoard() {
   if (!Array.isArray(state.board) || state.board.length < MIN_BOARD_SIZE) {
     state.board = createBoardPattern(state.boardSize || DEFAULT_BOARD_SIZE);
+    state.branches = createBoardBranches(state.board);
   }
   return state.board;
+}
+
+function activeBranches() {
+  activeBoard();
+  if (!Array.isArray(state.branches)) state.branches = createBoardBranches(state.board);
+  return state.branches;
 }
 
 function queueItemGain(player, items) {
@@ -544,6 +583,12 @@ function normalizeGameState(gameState) {
   gameState.boardSize = clamp(Number(gameState.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
     gameState.board = createBoardPattern(gameState.boardSize);
+  }
+  if (!Array.isArray(gameState.branches)) {
+    gameState.branches = createBoardBranches(gameState.board);
+  }
+  if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
+    gameState.nextEventTurn = 1;
   }
   ensureEffects(gameState);
   if (!Array.isArray(gameState.avatars)) {
@@ -753,6 +798,7 @@ function bindEvents() {
     }
     state.boardSize = clamp(Number(els.boardSizeInput.value), MIN_BOARD_SIZE, MAX_BOARD_SIZE);
     state.board = createBoardPattern(state.boardSize);
+    state.branches = createBoardBranches(state.board);
     els.boardSizeValue.textContent = `${state.boardSize}マス`;
     markChanged();
     renderBoard();
@@ -777,6 +823,9 @@ function bindEvents() {
     els.trashZone.classList.remove("drag-over");
     selectedItem = event.dataTransfer.getData("text/plain") || selectedItem;
     trashSelectedItem();
+  });
+  els.backpackGrid.addEventListener("dragleave", (event) => {
+    if (!els.backpackGrid.contains(event.relatedTarget)) clearPlacementPreview();
   });
   els.saveButton.addEventListener("click", saveGame);
   els.loadButton.addEventListener("click", loadGame);
@@ -829,10 +878,12 @@ function startOrderPhase() {
   if (!requireSetupControl()) return;
   state.boardSize = clamp(Number(state.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   state.board = createBoardPattern(state.boardSize);
+  state.branches = createBoardBranches(state.board);
   state.players = createPlayers();
   state.phase = "order";
   state.orderIndex = 0;
   state.currentIndex = 0;
+  state.nextEventTurn = 1;
   state.editorPlayerId = state.players[0].id;
   addLog("ゲーム開始。まずは1〜100ダイスで行動順を決めます。");
   renderAll();
@@ -980,7 +1031,7 @@ function advanceTurn() {
 function maybeTriggerEvent() {
   const minTurns = Math.min(...state.players.map((player) => player.turnCount));
   if (minTurns < state.nextEventTurn) return;
-  state.nextEventTurn += 2;
+  state.nextEventTurn += 1;
   triggerEvent();
 }
 
@@ -1040,7 +1091,8 @@ function buyBackpackExpansion() {
   const player = currentPlayer();
   if (!player) return;
   if (!requirePlayerControl(player)) return;
-  const cost = 130 + (player.backpackW + player.backpackH - 8) * 45;
+  const upgrades = Math.max(0, player.backpackW + player.backpackH - 8);
+  const cost = 200 + upgrades * 100;
   if (player.money < cost) {
     addLog(`${player.name} はバックパック拡張のお金が足りません。`);
     return;
@@ -1419,6 +1471,68 @@ function canPlace(player, stashItem, x, y) {
   return newCells.every((cell) => !occupied.has(cell));
 }
 
+function selectedStashItem(player) {
+  return player?.stash.find((item) => item.uid === selectedItem) || null;
+}
+
+function footprintCells(item, x, y) {
+  const cells = [];
+  if (!item) return cells;
+  for (let yy = y; yy < y + item.h; yy += 1) {
+    for (let xx = x; xx < x + item.w; xx += 1) cells.push(`${xx},${yy}`);
+  }
+  return cells;
+}
+
+function clearPlacementPreview() {
+  placementPreview = null;
+  renderPlacementPreview();
+}
+
+function setPlacementPreview(x, y) {
+  placementPreview = { x, y };
+  renderPlacementPreview();
+}
+
+function renderPlacementPreview() {
+  const player = selectedEditorPlayer();
+  const stashItem = selectedStashItem(player);
+  els.backpackGrid.querySelectorAll(".grid-cell").forEach((cell) => {
+    cell.classList.remove("preview-valid", "preview-invalid", "preview-anchor");
+  });
+  if (!player || !stashItem || !placementPreview) return;
+  const item = itemById(stashItem.itemId);
+  const valid = canPlace(player, stashItem, placementPreview.x, placementPreview.y);
+  const cells = footprintCells(item, placementPreview.x, placementPreview.y);
+  cells.forEach((key) => {
+    const cell = els.backpackGrid.querySelector(`.grid-cell[data-cell="${key}"]`);
+    if (!cell) return;
+    cell.classList.add(valid ? "preview-valid" : "preview-invalid");
+    if (key === `${placementPreview.x},${placementPreview.y}`) cell.classList.add("preview-anchor");
+  });
+}
+
+function cellFromPoint(clientX, clientY) {
+  const target = document.elementFromPoint(clientX, clientY);
+  return target?.closest?.(".grid-cell") || null;
+}
+
+function placeFromCell(cell) {
+  if (!cell) {
+    clearPlacementPreview();
+    return false;
+  }
+  const x = Number(cell.dataset.x);
+  const y = Number(cell.dataset.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    clearPlacementPreview();
+    return false;
+  }
+  placeSelectedItem(x, y);
+  clearPlacementPreview();
+  return true;
+}
+
 function placeSelectedItem(x, y) {
   const player = selectedEditorPlayer();
   if (!player || !selectedItem || !canEditBackpack(player)) return;
@@ -1445,6 +1559,7 @@ function placeSelectedItem(x, y) {
   selectedItem = null;
   addLog(`${player.name} は ${item.name} をバックパックに配置しました。`);
   renderBackpack();
+  markChanged();
 }
 
 function removePlacedItem(uidValue) {
@@ -1460,6 +1575,7 @@ function removePlacedItem(uidValue) {
   player.stash.push({ uid: item.uid, itemId: item.itemId, level: item.level });
   addLog(`${player.name} は ${itemById(item.itemId).name} を手持ちに戻しました。`);
   renderBackpack();
+  markChanged();
 }
 
 function trashSelectedItem() {
@@ -1763,6 +1879,7 @@ function renderSetupVisibility() {
 function renderBoard() {
   els.boardGrid.innerHTML = "";
   const board = activeBoard();
+  const branches = activeBranches();
   els.boardGrid.style.gridTemplateColumns = "";
   board.forEach((type, index) => {
     const info = spaceTypes[type];
@@ -1775,6 +1892,18 @@ function renderBoard() {
     }
     space.style.setProperty("--space-color", info.color);
     space.innerHTML = `<div class="tokens"></div>`;
+    const branch = branches.find((entry) => entry.from === index);
+    if (branch) {
+      const branchPath = document.createElement("div");
+      branchPath.className = `branch-path branch-${branch.side}`;
+      branch.spaces.forEach((branchType) => {
+        const node = document.createElement("span");
+        node.className = "branch-node";
+        node.style.setProperty("--space-color", spaceTypes[branchType]?.color || spaceTypes.plus.color);
+        branchPath.append(node);
+      });
+      space.append(branchPath);
+    }
     const tokens = space.querySelector(".tokens");
     state.players
       .filter((player) => player.position === index)
@@ -1923,7 +2052,17 @@ function actionButton(label, className, handler, disabled = false) {
   return button;
 }
 
+function ensureBackpackLimitNote() {
+  if (document.getElementById("stashLimitNote")) return;
+  const note = document.createElement("div");
+  note.id = "stashLimitNote";
+  note.className = "stash-limit-note";
+  note.textContent = "手持ちアイテムは3つまで";
+  els.editorSelect.insertAdjacentElement("afterend", note);
+}
+
 function renderBackpack() {
+  ensureBackpackLimitNote();
   els.editorSelect.innerHTML = "";
   els.itemDetail.textContent = "";
   const visiblePlayers =
@@ -1964,6 +2103,38 @@ function renderBackpack() {
     card.addEventListener("dragstart", (event) => {
       selectedItem = stashItem.uid;
       event.dataTransfer.setData("text/plain", stashItem.uid);
+      event.dataTransfer.effectAllowed = "move";
+      showItemDetail(stashItem, item);
+    });
+    card.addEventListener("dragend", clearPlacementPreview);
+    card.addEventListener("pointerdown", (event) => {
+      if (!editable || event.pointerType === "mouse") return;
+      selectedItem = stashItem.uid;
+      touchDrag = { uid: stashItem.uid, pointerId: event.pointerId };
+      card.setPointerCapture?.(event.pointerId);
+      card.classList.add("touch-dragging");
+      showItemDetail(stashItem, item);
+      event.preventDefault();
+    });
+    card.addEventListener("pointermove", (event) => {
+      if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
+      const cell = cellFromPoint(event.clientX, event.clientY);
+      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      event.preventDefault();
+    });
+    card.addEventListener("pointerup", (event) => {
+      if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
+      const cell = cellFromPoint(event.clientX, event.clientY);
+      card.releasePointerCapture?.(event.pointerId);
+      card.classList.remove("touch-dragging");
+      touchDrag = null;
+      placeFromCell(cell);
+      event.preventDefault();
+    });
+    card.addEventListener("pointercancel", () => {
+      card.classList.remove("touch-dragging");
+      touchDrag = null;
+      clearPlacementPreview();
     });
     card.classList.toggle("selected", selectedItem === stashItem.uid);
     card.addEventListener("click", () => {
@@ -1983,7 +2154,22 @@ function renderBackpack() {
       const cell = document.createElement("button");
       cell.className = "grid-cell";
       cell.type = "button";
+      cell.dataset.x = String(x);
+      cell.dataset.y = String(y);
+      cell.dataset.cell = `${x},${y}`;
       cell.setAttribute("aria-label", `slot ${x + 1}-${y + 1}`);
+      cell.addEventListener("dragover", (event) => {
+        if (!editable) return;
+        event.preventDefault();
+        setPlacementPreview(x, y);
+      });
+      cell.addEventListener("drop", (event) => {
+        if (!editable) return;
+        event.preventDefault();
+        selectedItem = event.dataTransfer.getData("text/plain") || selectedItem;
+        placeSelectedItem(x, y);
+        clearPlacementPreview();
+      });
       const placed = player.backpack.find((entry) =>
         occupiedCells(entry).some((spot) => spot.x === x && spot.y === y),
       );
@@ -2000,6 +2186,7 @@ function renderBackpack() {
       els.backpackGrid.append(cell);
     }
   }
+  renderPlacementPreview();
 
   renderSelectedDetail(player);
 }
@@ -2060,7 +2247,8 @@ function renderShop() {
       grid.append(card);
     });
     els.shopContent.append(grid);
-    els.shopContent.append(actionButton("バックパック拡張を購入", "secondary-button", buyBackpackExpansion));
+    const expansionCost = 200 + Math.max(0, player.backpackW + player.backpackH - 8) * 100;
+    els.shopContent.append(actionButton(`バックパック拡張 ${expansionCost}G`, "secondary-button", buyBackpackExpansion));
   } else if (state.phase === "forge") {
     els.shopTitle.textContent = "鍛造";
     const grid = document.createElement("div");

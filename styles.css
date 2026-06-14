@@ -424,7 +424,7 @@ textarea {
   overflow-y: hidden;
   width: 100%;
   max-width: 100%;
-  min-height: 124px;
+  min-height: 154px;
   padding: 0;
   scroll-behavior: smooth;
   scrollbar-color: #d9a514 rgba(255, 255, 255, 0.65);
@@ -438,8 +438,8 @@ textarea {
   max-width: none;
   gap: 18px;
   align-items: center;
-  min-height: 124px;
-  padding: 42px 24px 12px;
+  min-height: 154px;
+  padding: 48px 24px 42px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 226, 122, 0.14)),
     url("./assets/pixel-map.png") left center / auto 100% repeat-x;
@@ -479,6 +479,37 @@ textarea {
 
 .space:last-child::before {
   display: none;
+}
+
+.branch-path {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  gap: 7px;
+  transform: translateX(-12px) rotate(-28deg);
+  transform-origin: left center;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.branch-top {
+  bottom: calc(100% - 4px);
+}
+
+.branch-bottom {
+  top: calc(100% - 4px);
+  transform: translateX(-12px) rotate(28deg);
+}
+
+.branch-node {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border: 3px solid #211907;
+  border-radius: 6px;
+  background: var(--space-color);
+  box-shadow: 0 3px 0 rgba(33, 25, 7, 0.24);
+  opacity: 0.94;
 }
 
 .space.active-space {
@@ -730,6 +761,23 @@ textarea {
   display: none;
 }
 
+.backpack-panel #editorSelect {
+  display: none;
+}
+
+.stash-limit-note {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 2px solid #d6c2f2;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #fff7fb;
+  color: #6f6480;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .stash {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
@@ -770,11 +818,18 @@ textarea {
   color: var(--ink);
   cursor: pointer;
   text-align: left;
+  touch-action: none;
+  user-select: none;
 }
 
 .item-card.selected {
   outline: 3px solid rgba(19, 124, 107, 0.24);
   border-color: var(--accent);
+}
+
+.item-card.touch-dragging {
+  opacity: 0.72;
+  transform: scale(0.97);
 }
 
 .rarity-dot {
@@ -863,6 +918,38 @@ textarea {
     inset 0 0 0 4px var(--rarity-color),
     inset 0 -8px 0 rgba(46, 65, 94, 0.18),
     0 3px 0 rgba(26, 17, 8, 0.25);
+}
+
+.grid-cell.preview-valid,
+.grid-cell.preview-invalid {
+  z-index: 2;
+  transform: translateY(-2px);
+}
+
+.grid-cell.preview-valid {
+  box-shadow:
+    inset 0 0 0 4px #63d4a5,
+    0 0 0 4px rgba(99, 212, 165, 0.24),
+    0 5px 0 rgba(26, 17, 8, 0.25);
+}
+
+.grid-cell.preview-invalid {
+  box-shadow:
+    inset 0 0 0 4px #ef6f78,
+    0 0 0 4px rgba(239, 111, 120, 0.24),
+    0 5px 0 rgba(26, 17, 8, 0.25);
+}
+
+.grid-cell.preview-anchor::before {
+  content: "置く";
+  position: absolute;
+  inset: auto 4px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #211907;
+  font-size: 10px;
+  font-weight: 900;
+  z-index: 3;
 }
 
 .grid-cell.anchor::after {
@@ -1294,7 +1381,7 @@ textarea {
   }
 
   body.game-view .layout {
-    padding-top: 168px;
+    padding-top: 196px;
   }
 
   body.game-view .board-column {
@@ -1304,7 +1391,7 @@ textarea {
     right: 0;
     z-index: 30;
     width: 100%;
-    max-height: 168px;
+    max-height: 196px;
     margin: 0;
     border-radius: 0 0 10px 10px;
     overflow: hidden;
@@ -1316,7 +1403,7 @@ textarea {
   .board-wrap {
     width: 100%;
     max-width: 100%;
-    min-height: 96px;
+    min-height: 124px;
     padding-top: 0;
     overflow-x: auto;
     overflow-y: hidden;
@@ -1328,8 +1415,8 @@ textarea {
     min-width: max-content;
     max-width: none;
     gap: 16px;
-    min-height: 96px;
-    padding: 24px 14px 10px;
+    min-height: 124px;
+    padding: 36px 14px 28px;
   }
 
   .space {
