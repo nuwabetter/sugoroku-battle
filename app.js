@@ -43,7 +43,7 @@ const spaceTypes = {
   shop: { label: "ショップ", color: "#3278c6" },
   forge: { label: "鍛造", color: "#8758b8" },
   combat: { label: "戦闘", color: "#1f2937" },
-  goal: { label: "GOAL", color: "#d7a12b" },
+  goal: { label: "人生終了マス", color: "linear-gradient(135deg, #ff8ab3, #ffa7a0, #b7f7c4, #8bd9ff, #c7a8ff)" },
 };
 
 const playerColors = ["#d4453f", "#137c6b", "#3278c6", "#8758b8"];
@@ -2054,6 +2054,12 @@ function actionButton(label, className, handler, disabled = false) {
 
 function ensureBackpackLimitNote() {
   if (document.getElementById("stashLimitNote")) return;
+  const existing = document.querySelector(".backpack-panel .stash-limit-note");
+  if (existing) {
+    existing.id = "stashLimitNote";
+    existing.textContent = "手持ちアイテムは3つまで";
+    return;
+  }
   const note = document.createElement("div");
   note.id = "stashLimitNote";
   note.className = "stash-limit-note";
@@ -2177,7 +2183,6 @@ function renderBackpack() {
         const item = itemById(placed.itemId);
         cell.classList.add("occupied", `rare-${item.rarity}`);
         if (placed.x === x && placed.y === y) cell.classList.add("anchor");
-        cell.innerHTML = `<span class="cell-item"><span class="cell-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}<br>+${placed.level - 1}</span>`;
         cell.addEventListener("click", () => removePlacedItem(placed.uid));
       } else {
         cell.disabled = !editable;
@@ -2186,6 +2191,21 @@ function renderBackpack() {
       els.backpackGrid.append(cell);
     }
   }
+  player.backpack.forEach((entry) => {
+    const item = itemById(entry.itemId);
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = `placed-item-tile rare-${item.rarity}`;
+    tile.style.gridColumn = `${entry.x + 1} / span ${entry.w}`;
+    tile.style.gridRow = `${entry.y + 1} / span ${entry.h}`;
+    tile.innerHTML = `
+      <span class="placed-item-icon">${itemIcons[item.id] || "🎁"}</span>
+      <span class="placed-item-name">${escapeHtml(item.name)}</span>
+      <span class="placed-item-level">+${entry.level - 1}</span>
+    `;
+    tile.addEventListener("click", () => removePlacedItem(entry.uid));
+    els.backpackGrid.append(tile);
+  });
   renderPlacementPreview();
 
   renderSelectedDetail(player);
@@ -2249,10 +2269,8 @@ function renderShop() {
     els.shopContent.append(grid);
     const expansionCost = 200 + Math.max(0, player.backpackW + player.backpackH - 8) * 100;
     els.shopContent.append(actionButton(`バックパック拡張 ${expansionCost}G`, "secondary-button", buyBackpackExpansion));
-  } else if (state.phase === "forge") {
-    els.shopTitle.textContent = "鍛造";
-    const grid = document.createElement("div");
-    grid.className = "shop-grid";
+    const sellGrid = document.createElement("div");
+    sellGrid.className = "shop-grid sell-grid";
     player.stash.forEach((stashItem) => {
       const item = itemById(stashItem.itemId);
       const card = document.createElement("div");
@@ -2260,8 +2278,18 @@ function renderShop() {
       const sell = item.sell + (stashItem.level - 1) * 15;
       card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / 売却 ${sell}G</p>`;
       card.append(actionButton("売却", "secondary-button", () => sellStashItem(stashItem.uid)));
-      grid.append(card);
+      sellGrid.append(card);
     });
+    if (player.stash.length) {
+      const heading = document.createElement("h3");
+      heading.className = "shop-subtitle";
+      heading.textContent = "手持ち売却";
+      els.shopContent.append(heading, sellGrid);
+    }
+  } else if (state.phase === "forge") {
+    els.shopTitle.textContent = "鍛造";
+    const grid = document.createElement("div");
+    grid.className = "shop-grid";
     player.backpack.forEach((entry) => {
       const item = itemById(entry.itemId);
       const card = document.createElement("div");
