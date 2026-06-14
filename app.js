@@ -311,6 +311,7 @@ let uiEffects = {
 let battleTimerHandle = null;
 let battleTickHandle = null;
 let renderTimerHandle = null;
+let resizeRenderHandle = null;
 let online = {
   enabled: false,
   ready: false,
@@ -368,6 +369,7 @@ const els = {
   battleTimer: document.getElementById("battleTimer"),
   battleArena: document.getElementById("battleArena"),
   logList: document.getElementById("logList"),
+  topActions: document.querySelector(".top-actions"),
   saveButton: document.getElementById("saveButton"),
   loadButton: document.getElementById("loadButton"),
   resetButton: document.getElementById("resetButton"),
@@ -807,6 +809,7 @@ function currentPlayer() {
 function init() {
   els.firebaseConfigInput.value = JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
   if (online.playerId) els.seatSelect.value = String(online.playerId);
+  moveTopActionsBelowLog();
   renderSetup();
   renderBoard();
   renderLegend();
@@ -815,6 +818,12 @@ function init() {
   renderTimerHandle = window.setInterval(() => {
     if (state.phase === "battlePrep") renderBattle();
   }, 300);
+}
+
+function moveTopActionsBelowLog() {
+  const logPanel = document.querySelector(".log-panel");
+  if (!logPanel || !els.topActions || logPanel.contains(els.topActions)) return;
+  logPanel.append(els.topActions);
 }
 
 function bindEvents() {
@@ -901,6 +910,10 @@ function bindEvents() {
   });
   els.roomCodeInput.addEventListener("input", () => {
     els.roomCodeInput.value = els.roomCodeInput.value.replace(/\D/g, "").slice(0, 4);
+  });
+  window.addEventListener("resize", () => {
+    window.clearTimeout(resizeRenderHandle);
+    resizeRenderHandle = window.setTimeout(renderBackpack, 120);
   });
 }
 
@@ -1564,6 +1577,14 @@ function renderPlacementPreview() {
   });
 }
 
+function autoScrollDuringDrag(clientY) {
+  const edge = Math.min(120, window.innerHeight * 0.22);
+  let delta = 0;
+  if (clientY < edge) delta = -Math.round((edge - clientY) / 4);
+  else if (clientY > window.innerHeight - edge) delta = Math.round((clientY - (window.innerHeight - edge)) / 4);
+  if (delta) window.scrollBy({ top: delta, behavior: "auto" });
+}
+
 function cellFromPoint(clientX, clientY) {
   const dragElement = touchDrag?.element;
   const previousPointerEvents = dragElement?.style.pointerEvents;
@@ -1586,6 +1607,17 @@ function placeFromCell(cell) {
   }
   placeSelectedItem(x, y);
   clearPlacementPreview();
+  return true;
+}
+
+function positionPlacedTile(tile, entry) {
+  const start = els.backpackGrid.querySelector(`.grid-cell[data-cell="${entry.x},${entry.y}"]`);
+  const end = els.backpackGrid.querySelector(`.grid-cell[data-cell="${entry.x + entry.w - 1},${entry.y + entry.h - 1}"]`);
+  if (!start || !end) return false;
+  tile.style.left = `${start.offsetLeft}px`;
+  tile.style.top = `${start.offsetTop}px`;
+  tile.style.width = `${end.offsetLeft + end.offsetWidth - start.offsetLeft}px`;
+  tile.style.height = `${end.offsetTop + end.offsetHeight - start.offsetTop}px`;
   return true;
 }
 
@@ -2170,6 +2202,12 @@ function renderBackpack() {
       event.dataTransfer.effectAllowed = "move";
       showItemDetail(stashItem, item);
     });
+    card.addEventListener("drag", (event) => {
+      if (!event.clientX && !event.clientY) return;
+      autoScrollDuringDrag(event.clientY);
+      const cell = cellFromPoint(event.clientX, event.clientY);
+      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+    });
     card.addEventListener("dragend", clearPlacementPreview);
     card.addEventListener("pointerdown", (event) => {
       if (!editable || event.pointerType === "mouse") return;
@@ -2182,6 +2220,7 @@ function renderBackpack() {
     });
     card.addEventListener("pointermove", (event) => {
       if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
+      autoScrollDuringDrag(event.clientY);
       const cell = cellFromPoint(event.clientX, event.clientY);
       if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
       event.preventDefault();
@@ -2212,6 +2251,7 @@ function renderBackpack() {
       if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
       const touch = event.touches[0];
       if (!touch) return;
+      autoScrollDuringDrag(touch.clientY);
       const cell = cellFromPoint(touch.clientX, touch.clientY);
       if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
       event.preventDefault();
@@ -2285,8 +2325,6 @@ function renderBackpack() {
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = `placed-item-tile rare-${item.rarity}`;
-    tile.style.gridColumn = `${entry.x + 1} / span ${width}`;
-    tile.style.gridRow = `${entry.y + 1} / span ${height}`;
     tile.innerHTML = `
       <span class="placed-item-icon">${itemIcons[item.id] || "🎁"}</span>
       <span class="placed-item-name">${escapeHtml(item.name)}</span>
@@ -2294,6 +2332,7 @@ function renderBackpack() {
     `;
     tile.addEventListener("click", () => removePlacedItem(entry.uid));
     els.backpackGrid.append(tile);
+    positionPlacedTile(tile, { ...entry, w: width, h: height });
   });
   renderPlacementPreview();
 
