@@ -388,6 +388,7 @@ function newGameState() {
     battle: null,
     effects: {
       itemGains: [],
+      battleActions: [],
     },
     nextEventTurn: 2,
     log: [],
@@ -426,12 +427,16 @@ function sleep(ms) {
 
 function ensureEffects(targetState = state) {
   if (!targetState.effects || typeof targetState.effects !== "object") {
-    targetState.effects = { itemGains: [] };
+    targetState.effects = { itemGains: [], battleActions: [] };
   }
   if (!Array.isArray(targetState.effects.itemGains)) {
     targetState.effects.itemGains = [];
   }
+  if (!Array.isArray(targetState.effects.battleActions)) {
+    targetState.effects.battleActions = [];
+  }
   targetState.effects.itemGains = targetState.effects.itemGains.slice(-16);
+  targetState.effects.battleActions = targetState.effects.battleActions.slice(-24);
   return targetState.effects;
 }
 
@@ -511,6 +516,28 @@ function showSpaceEffect(position, type) {
       renderBoard();
     }
   }, 900);
+}
+
+function queueBattleAction(action) {
+  const effects = ensureEffects();
+  effects.battleActions.push({
+    id: uid(),
+    at: Date.now(),
+    ...action,
+  });
+  effects.battleActions = effects.battleActions.slice(-24);
+  window.setTimeout(renderBattle, 1300);
+}
+
+function recentBattleActionFor(playerId, role) {
+  const now = Date.now();
+  const effects = ensureEffects();
+  return [...effects.battleActions].reverse().find((action) => {
+    if (now - action.at > 1300) return false;
+    if (role === "actor") return action.actorId === playerId;
+    if (role === "target") return action.targetIds?.includes(playerId);
+    return false;
+  });
 }
 
 function normalizeGameState(gameState) {
@@ -1105,15 +1132,19 @@ function openCombatChoice(player) {
 function startBattle(playerIds, isFinal, title) {
   clearBattleLoops();
   state.phase = "battlePrep";
+  const hpMultiplier = playerIds.length >= 3 ? playerIds.length - 1 : 1;
   const participants = playerIds.map((id) => {
     const player = state.players.find((p) => p.id === id);
     const shield = placedItems(player).reduce((sum, placed) => {
       const item = itemById(placed.itemId);
       return sum + (item.shield || 0) + (placed.level - 1) * 2;
     }, 0);
+    const baseHp = Math.max(50, 100 - Math.round(player.nextBattlePenalty * 100));
+    const maxHp = baseHp * hpMultiplier;
     return {
       playerId: player.id,
-      hp: Math.max(50, 100 - Math.round(player.nextBattlePenalty * 100)),
+      hp: maxHp,
+      maxHp,
       shield,
       alive: true,
       rank: null,
@@ -1125,14 +1156,58 @@ function startBattle(playerIds, isFinal, title) {
   state.battle = {
     title,
     isFinal,
-    prepEnd: Date.now() + 20000,
+    prepStartedAt: Date.now(),
+    ready: Object.fromEntries(playerIds.map((id) => [id, false])),
     participants,
     feed: [`${title} の準備時間が始まりました。`],
   };
   state.editorPlayerId = playerIds[0];
   renderAll();
-  if (!online.enabled || online.isHost) {
-    battleTimerHandle = window.setTimeout(runBattle, 20000);
+  markChanged();
+}
+
+function battleParticipantIds() {
+  return state.battle?.participants.map((fighter) => fighter.playerId) || [];
+}
+
+function isBattleReady() {
+  const ids = battleParticipantIds();
+  return Boolean(ids.length && ids.every((id) => state.battle.ready?.[id]));
+}
+
+function battleReadyPlayer() {
+  if (!state.battle) return null;
+  if (online.enabled) {
+    return state.battle.participants.some((fighter) => fighter.playerId === online.playerId)
+      ? state.players.find((player) => player.id === online.playerId)
+      : null;
+  }
+  const selected = selectedEditorPlayer();
+  if (selected && state.battle.participants.some((fighter) => fighter.playerId === selected.id)) return selected;
+  const player = currentPlayer();
+  if (player && state.battle.participants.some((fighter) => fighter.playerId === player.id)) return player;
+  return state.players.find((player) => state.battle.participants.some((fighter) => fighter.playerId === player.id));
+}
+
+function markBattleReady() {
+  if (!state.battle || state.phase !== "battlePrep") return;
+  const player = battleReadyPlayer();
+  if (!player) {
+    localNotice("この戦闘に参加しているプレイヤーだけ準備完了できます。");
+    return;
+  }
+  if (online.enabled && !canControlPlayer(player)) {
+    requirePlayerControl(player);
+    return;
+  }
+  state.battle.ready = state.battle.ready || {};
+  state.battle.ready[player.id] = true;
+  state.battle.feed.unshift(`${player.name} が準備完了しました。`);
+  queueBattleAction({ type: "ready", actorId: player.id, targetIds: [], label: "READY" });
+  renderAll();
+  markChanged();
+  if (isBattleReady() && (!online.enabled || online.isHost)) {
+    window.setTimeout(runBattle, 250);
   }
 }
 
@@ -1140,6 +1215,7 @@ function runBattle() {
   if (!state.battle) return;
   if (state.phase !== "battlePrep") return;
   if (online.enabled && !online.isHost) return;
+  if (!isBattleReady()) return;
   state.phase = "battle";
   state.battle.feed.unshift("戦闘開始。バックパック内のアイテムが自動で発動します。");
   state.battle.participants.forEach((fighter) => {
@@ -1178,11 +1254,11 @@ function battleTick() {
     const placed = placedItems(player);
     const targetPool = battle.participants.filter((target) => target.alive && target.playerId !== player.id);
     if (!targetPool.length) continue;
-    const target = choice(targetPool);
-    const targetPlayer = state.players.find((p) => p.id === target.playerId);
     const weaken = placed.reduce((sum, entry) => sum + (itemById(entry.itemId).weaken || 0), 0);
     if (weaken > 0) {
-      target.cooldowns.weaken = Math.max(target.cooldowns.weaken || 0, weaken);
+      targetPool.forEach((target) => {
+        target.cooldowns.weaken = Math.max(target.cooldowns.weaken || 0, weaken);
+      });
     }
 
     for (const entry of placed) {
@@ -1195,25 +1271,29 @@ function battleTick() {
         fighter.cooldowns[key] = Math.max(600, item.interval || 2500);
         const damage = calculateDamage(player, entry, item);
         const finalDamage = Math.max(1, Math.round(damage * (1 - (player.nextBattlePenalty || 0))));
-        applyDamage(target, finalDamage, `${player.name} の ${item.name}`);
+        targetPool
+          .filter((target) => target.alive)
+          .forEach((target) => {
+            applyDamage(target, finalDamage, `${player.name} の ${item.name}`, player.id);
+            settleDefeat(target);
+          });
         if (item.healOnHit) {
-          fighter.hp = Math.min(100, fighter.hp + item.healOnHit + entry.level - 1);
+          const amount = item.healOnHit + entry.level - 1;
+          fighter.hp = Math.min(fighter.maxHp || 100, fighter.hp + amount);
+          queueBattleAction({ type: "heal", actorId: player.id, targetIds: [player.id], label: `+${amount}` });
         }
       }
 
       if (item.heal) {
         fighter.cooldowns[key] = Math.max(600, item.interval || 3500);
         const amount = item.heal + entry.level * 2;
-        fighter.hp = Math.min(100, fighter.hp + amount);
+        fighter.hp = Math.min(fighter.maxHp || 100, fighter.hp + amount);
         battle.feed.unshift(`${player.name} は ${item.name} で ${amount} 回復。`);
+        queueBattleAction({ type: "heal", actorId: player.id, targetIds: [player.id], label: `+${amount}` });
       }
     }
 
-    if (target.hp <= 0 && target.alive) {
-      target.alive = false;
-      target.rank = battle.participants.filter((entry) => !entry.rank).length;
-      battle.feed.unshift(`${targetPlayer.name} は倒れました。`);
-    }
+    targetPool.forEach((target) => settleDefeat(target));
   }
   markChanged();
   renderBattle();
@@ -1242,13 +1322,22 @@ function areAdjacent(a, b) {
   );
 }
 
-function applyDamage(target, amount, label) {
+function applyDamage(target, amount, label, actorId = null) {
   const battle = state.battle;
   const blocked = Math.min(target.shield, amount);
   target.shield -= blocked;
   target.hp -= amount - blocked;
   const player = state.players.find((p) => p.id === target.playerId);
   battle.feed.unshift(`${label} が ${player.name} に ${amount - blocked} ダメージ。`);
+  queueBattleAction({ type: "damage", actorId, targetIds: [target.playerId], label: `-${amount - blocked}` });
+}
+
+function settleDefeat(target) {
+  if (!target || target.hp > 0 || !target.alive) return;
+  target.alive = false;
+  target.rank = state.battle.participants.filter((entry) => !entry.rank).length;
+  const targetPlayer = state.players.find((p) => p.id === target.playerId);
+  state.battle.feed.unshift(`${targetPlayer.name} は倒れました。`);
 }
 
 function finishBattle() {
@@ -1604,8 +1693,7 @@ function applyRemoteState(remoteState) {
 function scheduleOnlineBattleLoops() {
   if (!online.enabled || !online.isHost || !state.battle) return;
   if (state.phase === "battlePrep") {
-    const delay = Math.max(0, state.battle.prepEnd - Date.now());
-    battleTimerHandle = window.setTimeout(runBattle, delay);
+    if (isBattleReady()) battleTimerHandle = window.setTimeout(runBattle, 250);
   } else if (state.phase === "battle") {
     battleTickHandle = window.setInterval(battleTick, 250);
   }
@@ -1800,13 +1888,17 @@ function renderTurn() {
   }
 
   if (state.phase === "battlePrep") {
-    els.turnTitle.textContent = "戦闘準備";
-    els.actionArea.append(actionButton("すぐ戦闘開始", "danger-button", runBattle, false));
+    const ids = battleParticipantIds();
+    const readyCount = ids.filter((id) => state.battle?.ready?.[id]).length;
+    const readyPlayer = battleReadyPlayer();
+    const isReady = readyPlayer ? Boolean(state.battle?.ready?.[readyPlayer.id]) : false;
+    els.turnTitle.textContent = `戦闘準備 ${readyCount}/${ids.length}`;
+    els.actionArea.append(actionButton(isReady ? "準備完了済み" : "準備完了", "danger-button", markBattleReady, !readyPlayer || isReady));
     return;
   }
 
   if (state.phase === "battle") {
-    els.turnTitle.textContent = "戦闘中";
+    els.turnTitle.textContent = "自動戦闘中";
     return;
   }
 
@@ -2005,8 +2097,9 @@ function renderBattle() {
 
   const battle = state.battle;
   if (state.phase === "battlePrep" || state.phase === "final") {
-    const seconds = Math.max(0, Math.ceil((battle.prepEnd - Date.now()) / 1000));
-    els.battleTimer.textContent = `準備 ${seconds}s`;
+    const ids = battleParticipantIds();
+    const readyCount = ids.filter((id) => battle.ready?.[id]).length;
+    els.battleTimer.textContent = `準備 ${readyCount}/${ids.length}`;
   } else if (state.phase === "battle") {
     els.battleTimer.textContent = "自動戦闘";
   } else {
@@ -2017,9 +2110,20 @@ function renderBattle() {
     const player = state.players.find((p) => p.id === fighter.playerId);
     const row = document.createElement("div");
     row.className = "fighter";
+    const actorEffect = recentBattleActionFor(player.id, "actor");
+    const targetEffect = recentBattleActionFor(player.id, "target");
+    if (actorEffect) row.classList.add(actorEffect.type === "heal" || actorEffect.type === "ready" ? "fighter-ready" : "fighter-acting");
+    if (targetEffect) row.classList.add(targetEffect.type === "heal" ? "fighter-ready" : "fighter-hit");
+    const hpMax = fighter.maxHp || 100;
+    const hpPercent = clamp((Math.max(0, fighter.hp) / hpMax) * 100, 0, 100);
+    const readyMark = state.phase === "battlePrep"
+      ? `<span class="ready-mark ${battle.ready?.[player.id] ? "ready" : ""}">${battle.ready?.[player.id] ? "READY" : "WAIT"}</span>`
+      : "";
     row.innerHTML = `
-      <div class="fighter-head"><span>${escapeHtml(player.name)}</span><span>${Math.max(0, Math.round(fighter.hp))} HP / 盾 ${fighter.shield}</span></div>
-      <div class="hp-bar"><span class="hp-fill" style="--hp:${Math.max(0, fighter.hp)}%"></span></div>
+      <div class="fighter-head"><span>${escapeHtml(player.name)} ${readyMark}</span><span>${Math.max(0, Math.round(fighter.hp))}/${hpMax} HP / 盾 ${fighter.shield}</span></div>
+      <div class="hp-bar"><span class="hp-fill" style="--hp:${hpPercent}%"></span></div>
+      ${targetEffect ? `<div class="battle-pop damage-pop">${escapeHtml(targetEffect.label)}</div>` : ""}
+      ${actorEffect ? `<div class="battle-pop action-pop">${escapeHtml(actorEffect.label)}</div>` : ""}
       <div class="battle-items">${renderBattleItems(player, fighter)}</div>
     `;
     els.battleArena.append(row);

@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --bg: #fffaf0;
+  --bg: #fff8fb;
   --ink: #211907;
-  --muted: #766331;
-  --line: #d8b847;
+  --muted: #6f6480;
+  --line: #d6c2f2;
   --panel: #ffffff;
-  --panel-soft: #fff8dc;
-  --accent: #d9a514;
-  --accent-2: #e1533d;
-  --accent-3: #3d9a72;
-  --shadow: 0 8px 0 rgba(119, 89, 10, 0.18);
+  --panel-soft: #fff7fb;
+  --accent: #ffd36f;
+  --accent-2: #ff8a9b;
+  --accent-3: #8adbc5;
+  --shadow: 0 8px 0 rgba(126, 96, 173, 0.15);
   --radius: 8px;
   --white: #e9ecef;
   --green: #3ca370;
@@ -26,8 +26,10 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.85), transparent 28%),
-    linear-gradient(135deg, #fff8dc 0%, #d7a514 42%, #7c5a0b 100%);
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.9), transparent 24%),
+    radial-gradient(circle at 82% 4%, rgba(205, 243, 255, 0.72), transparent 26%),
+    radial-gradient(circle at 86% 78%, rgba(255, 211, 231, 0.7), transparent 30%),
+    linear-gradient(135deg, #fff8fb 0%, #fff0c9 35%, #d7f5ff 68%, #eadcff 100%);
   color: var(--ink);
   font-family:
     "DotGothic16", "MS Gothic", "Yu Gothic UI", "Meiryo", monospace;
@@ -156,7 +158,7 @@ body.game-view .online-panel {
 
 .panel,
 .board-column {
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.94);
   border: 3px solid #211907;
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -173,7 +175,9 @@ body.game-view .online-panel {
   overflow: hidden;
   padding: 12px;
   min-height: auto;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 241, 176, 0.74));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(232, 246, 255, 0.72)),
+    linear-gradient(135deg, rgba(255, 230, 243, 0.76), rgba(233, 224, 255, 0.72));
   image-rendering: pixelated;
 }
 
@@ -660,8 +664,15 @@ textarea {
   gap: 8px;
   align-items: center;
   margin-top: 8px;
-  border-top: 2px dashed rgba(216, 184, 71, 0.8);
-  padding-top: 8px;
+  border: 2px solid rgba(214, 194, 242, 0.92);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(255, 211, 111, 0.3), rgba(216, 244, 255, 0.42)),
+    #fff;
+  padding: 8px;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.72),
+    0 4px 0 rgba(126, 96, 173, 0.12);
 }
 
 .stat {
@@ -686,9 +697,10 @@ textarea {
   place-items: center;
   border: 2px solid var(--ink);
   border-radius: 8px;
-  background: #fff;
+  background: #fffaf0;
   font-size: 24px;
   font-weight: 900;
+  box-shadow: 0 4px 0 rgba(33, 25, 7, 0.14);
 }
 
 .action-area {
@@ -801,8 +813,8 @@ textarea {
 
 .backpack-panel {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 240, 176, 0.9)),
-    linear-gradient(135deg, #fff8db, #b98921);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(238, 244, 255, 0.92)),
+    linear-gradient(135deg, #f8fcff, #d9ccff);
 }
 
 .backpack-grid {
@@ -814,8 +826,8 @@ textarea {
   border: 5px solid #5a3616;
   border-radius: 18px;
   background:
-    linear-gradient(90deg, transparent 46%, rgba(49, 27, 8, 0.22) 46% 54%, transparent 54%),
-    linear-gradient(180deg, #8a5425, #5b3418);
+    linear-gradient(90deg, transparent 46%, rgba(25, 42, 58, 0.24) 46% 54%, transparent 54%),
+    linear-gradient(180deg, #3f4e61, #22303c);
   box-shadow:
     inset 0 0 0 4px rgba(255, 217, 120, 0.22),
     0 7px 0 rgba(44, 28, 9, 0.28);
@@ -831,7 +843,7 @@ textarea {
   border-radius: 12px;
   background:
     linear-gradient(rgba(255, 255, 255, 0.04), rgba(76, 94, 122, 0.1)),
-    url("./assets/backpack-slot.png") center / cover no-repeat;
+    url("./assets/slot-frame.png") center / cover no-repeat;
   color: var(--muted);
   cursor: pointer;
   font-size: 11px;
@@ -846,7 +858,7 @@ textarea {
 .grid-cell.occupied {
   background:
     linear-gradient(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.16)),
-    url("./assets/backpack-slot.png") center / cover no-repeat;
+    url("./assets/slot-frame.png") center / cover no-repeat;
   box-shadow:
     inset 0 0 0 4px var(--rarity-color),
     inset 0 -8px 0 rgba(46, 65, 94, 0.18),
@@ -933,10 +945,24 @@ textarea {
 }
 
 .fighter {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-soft);
   padding: 10px;
+}
+
+.fighter-acting {
+  animation: fighterAct 0.65s ease-out;
+}
+
+.fighter-hit {
+  animation: fighterHit 0.55s ease-out;
+}
+
+.fighter-ready {
+  animation: fighterReady 0.8s ease-out;
 }
 
 .fighter-head {
@@ -944,6 +970,24 @@ textarea {
   justify-content: space-between;
   gap: 8px;
   font-weight: 900;
+}
+
+.ready-mark {
+  display: inline-flex;
+  margin-left: 6px;
+  border: 1px solid #b8a6dc;
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #fff;
+  color: #8b789f;
+  font-size: 10px;
+  vertical-align: middle;
+}
+
+.ready-mark.ready {
+  border-color: #69c9ae;
+  background: #dffbf4;
+  color: #22785f;
 }
 
 .hp-bar {
@@ -960,6 +1004,32 @@ textarea {
   inset: 0 auto 0 0;
   width: var(--hp);
   background: linear-gradient(90deg, #31a37c, #d7a12b, #d4453f);
+  transition: width 0.25s ease;
+}
+
+.battle-pop {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  border: 2px solid #211907;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  animation: battlePop 1s ease-out forwards;
+  pointer-events: none;
+}
+
+.damage-pop {
+  color: #d4453f;
+}
+
+.action-pop {
+  right: auto;
+  left: 12px;
+  color: #22785f;
 }
 
 .battle-feed {
@@ -1100,6 +1170,63 @@ textarea {
   }
 }
 
+@keyframes fighterAct {
+  0% {
+    box-shadow: 0 0 0 rgba(255, 211, 111, 0);
+    transform: translateX(0);
+  }
+  45% {
+    box-shadow: 0 0 0 5px rgba(255, 211, 111, 0.45);
+    transform: translateX(4px);
+  }
+  100% {
+    box-shadow: 0 0 0 rgba(255, 211, 111, 0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes fighterHit {
+  0%,
+  100% {
+    background: var(--panel-soft);
+    transform: translateX(0);
+  }
+  28% {
+    background: #ffe5e8;
+    transform: translateX(-5px);
+  }
+  56% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes fighterReady {
+  0% {
+    box-shadow: 0 0 0 rgba(138, 219, 197, 0);
+  }
+  45% {
+    box-shadow: 0 0 0 6px rgba(138, 219, 197, 0.42);
+  }
+  100% {
+    box-shadow: 0 0 0 rgba(138, 219, 197, 0);
+  }
+}
+
+@keyframes battlePop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.82);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.94);
+  }
+}
+
 @media (max-width: 1320px) {
   .layout {
     grid-template-columns: 1fr;
@@ -1166,11 +1293,21 @@ textarea {
     background-position: center top;
   }
 
+  body.game-view .layout {
+    padding-top: 168px;
+  }
+
   body.game-view .board-column {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 30;
-    margin-bottom: 8px;
+    width: 100%;
+    max-height: 168px;
+    margin: 0;
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
     box-shadow:
       0 7px 0 rgba(119, 89, 10, 0.22),
       0 10px 24px rgba(72, 47, 6, 0.18);
@@ -1179,7 +1316,7 @@ textarea {
   .board-wrap {
     width: 100%;
     max-width: 100%;
-    min-height: 104px;
+    min-height: 96px;
     padding-top: 0;
     overflow-x: auto;
     overflow-y: hidden;
@@ -1191,8 +1328,8 @@ textarea {
     min-width: max-content;
     max-width: none;
     gap: 16px;
-    min-height: 104px;
-    padding: 28px 14px 10px;
+    min-height: 96px;
+    padding: 24px 14px 10px;
   }
 
   .space {
