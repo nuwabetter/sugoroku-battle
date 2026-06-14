@@ -519,6 +519,7 @@ textarea {
 }
 
 .branch-node {
+  position: relative;
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
@@ -527,6 +528,30 @@ textarea {
   background: var(--space-color);
   box-shadow: 0 3px 0 rgba(33, 25, 7, 0.24);
   opacity: 0.94;
+}
+
+.branch-tokens {
+  position: absolute;
+  right: -18px;
+  bottom: -18px;
+  display: flex;
+  gap: 2px;
+  z-index: 3;
+}
+
+.branch-tokens .token {
+  width: 36px;
+  height: 36px;
+  border-width: 2px;
+  font-size: 21px;
+}
+
+.branch-top .branch-tokens {
+  transform: rotate(28deg);
+}
+
+.branch-bottom .branch-tokens {
+  transform: rotate(-28deg);
 }
 
 .space.active-space {
@@ -1096,10 +1121,103 @@ textarea {
   line-height: 1.35;
 }
 
+.synth-item {
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.synth-item.selected {
+  border-color: #8c63d6;
+  background: linear-gradient(135deg, #fff, #f1e7ff);
+  box-shadow: 0 0 0 3px rgba(140, 99, 214, 0.2), 0 8px 0 rgba(66, 43, 99, 0.1);
+  transform: translateY(-2px);
+}
+
 .battle-arena {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.victory-celebration {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 260px;
+  border: 3px solid #211907;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.96), rgba(255, 248, 214, 0.55) 35%, transparent 66%),
+    linear-gradient(135deg, #fff8fe, #e5fbff 46%, #fff4d5);
+  box-shadow: 0 10px 0 rgba(33, 25, 7, 0.16), inset 0 0 0 6px rgba(255, 255, 255, 0.42);
+  padding: 24px 14px 20px;
+  text-align: center;
+}
+
+.victory-celebration::before {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  z-index: -1;
+  background: conic-gradient(from 0deg, transparent, rgba(255, 213, 95, 0.75), transparent, rgba(159, 213, 255, 0.7), transparent);
+  animation: victorySpin 5s linear infinite;
+}
+
+.victory-crown {
+  font-size: 54px;
+  filter: drop-shadow(0 5px 0 rgba(33, 25, 7, 0.22));
+  animation: victoryBounce 1.25s ease-in-out infinite;
+}
+
+.victory-avatar {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border: 5px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px #211907, 0 12px 0 rgba(33, 25, 7, 0.18);
+  font-size: 54px;
+}
+
+.victory-celebration h3 {
+  margin: 4px 0 0;
+  color: #9b7a1b;
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.victory-celebration strong {
+  color: #211907;
+  font-size: 30px;
+  text-shadow: 0 3px 0 rgba(255, 255, 255, 0.9);
+}
+
+.victory-celebration p {
+  margin: 0;
+  color: #5c4f32;
+  font-size: 14px;
+}
+
+.victory-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.victory-confetti span {
+  position: absolute;
+  left: calc((var(--i) * 53px) % 100%);
+  top: -20px;
+  width: 10px;
+  height: 16px;
+  border-radius: 3px;
+  background: hsl(calc(var(--i) * 37), 78%, 68%);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
+  animation: confettiFall calc(2.1s + (var(--i) * 0.08s)) linear infinite;
+  animation-delay: calc(var(--i) * -0.13s);
 }
 
 .fighter {
@@ -1382,6 +1500,36 @@ textarea {
   100% {
     opacity: 0;
     transform: translateY(-18px) scale(0.94);
+  }
+}
+
+@keyframes victorySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes victoryBounce {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(4deg);
+  }
+}
+
+@keyframes confettiFall {
+  0% {
+    opacity: 0;
+    transform: translateY(-18px) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.95;
+    transform: translateY(300px) rotate(420deg);
   }
 }
 

@@ -302,6 +302,7 @@ const randomSpaceWeights = [
 
 let state = newGameState();
 let selectedItem = null;
+let selectedSynthesis = [];
 let placementPreview = null;
 let touchDrag = null;
 let isAnimatingMove = false;
@@ -392,6 +393,7 @@ function newGameState() {
     editorPlayerId: null,
     pendingShop: [],
     battle: null,
+    winnerId: null,
     effects: {
       itemGains: [],
       battleActions: [],
@@ -477,7 +479,9 @@ function createBoardBranches(board) {
     used.add(from);
     const branchLength = rand(3, 5);
     branches.push({
+      id: `branch-${from}`,
       from,
+      to: clamp(from + branchLength + 1, 1, length - 1),
       side: index % 2 === 0 ? "top" : "bottom",
       spaces: Array.from({ length: branchLength }, (_, branchIndex) => {
         if (branchIndex === branchLength - 1) return weightedChoice([["plus", 55], ["lucky", 25], ["forge", 12], ["shop", 8]]);
@@ -514,13 +518,15 @@ function sanitizeBoard(board) {
   return board;
 }
 
-function sanitizeBranches(branches) {
+function sanitizeBranches(branches, boardLength = activeBoard().length) {
   if (!Array.isArray(branches)) return branches;
   return branches
     .filter((branch) => Number(branch.from) >= 14)
     .map((branch) => ({
       ...branch,
+      id: branch.id || `branch-${Number(branch.from)}`,
       from: Number(branch.from),
+      to: clamp(Number(branch.to) || Number(branch.from) + (branch.spaces?.length || 3) + 1, Number(branch.from) + 1, boardLength - 1),
       spaces: Array.isArray(branch.spaces)
         ? branch.spaces.map((type) => (type === "combat" ? "plus" : type))
         : [],
@@ -543,7 +549,7 @@ function activeBoard() {
 function activeBranches() {
   activeBoard();
   if (!Array.isArray(state.branches)) state.branches = createBoardBranches(state.board);
-  state.branches = sanitizeBranches(state.branches);
+  state.branches = sanitizeBranches(state.branches, state.board.length);
   return state.branches;
 }
 
@@ -617,7 +623,7 @@ function normalizeGameState(gameState) {
   if (!Array.isArray(gameState.branches)) {
     gameState.branches = createBoardBranches(gameState.board);
   }
-  gameState.branches = sanitizeBranches(gameState.branches);
+  gameState.branches = sanitizeBranches(gameState.branches, gameState.board.length);
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -629,6 +635,8 @@ function normalizeGameState(gameState) {
     gameState.players.forEach((player, index) => {
       player.position = clamp(Number(player.position) || 0, 0, gameState.board.length - 1);
       player.avatar = player.avatar || gameState.avatars[index] || avatarOptions[index] || "😀";
+      if (player.branch && !gameState.branches.some((branch) => branch.id === player.branch.id)) player.branch = null;
+      if (player.branch) player.branch.index = clamp(Number(player.branch.index) || 0, 0, 12);
       normalizeBackpack(player);
     });
   }
@@ -718,6 +726,7 @@ function createPlayers() {
     backpack: [],
     stash: [],
     defeated: false,
+    branch: null,
   }));
 }
 
@@ -997,6 +1006,44 @@ function purgeOverflow(player) {
   addLog(`${player.name} の手持ちが多すぎたため、${removed.join("、")} が失われました。`);
 }
 
+function branchForPlayer(player) {
+  if (!player?.branch) return null;
+  return activeBranches().find((branch) => branch.id === player.branch.id) || null;
+}
+
+function currentSpaceTypeFor(player) {
+  const branch = branchForPlayer(player);
+  if (branch) return branch.spaces[player.branch.index] || "plus";
+  return activeBoard()[player.position];
+}
+
+function nextBranchFrom(position) {
+  return activeBranches().find((branch) => branch.from === position) || null;
+}
+
+function stepPlayerForward(player) {
+  const branch = branchForPlayer(player);
+  if (branch) {
+    if (player.branch.index < branch.spaces.length - 1) {
+      player.branch.index += 1;
+      return;
+    }
+    player.position = branch.to;
+    player.branch = null;
+    return;
+  }
+
+  const next = clamp(player.position + 1, 0, activeBoard().length - 1);
+  const enteringBranch = nextBranchFrom(next);
+  if (enteringBranch?.spaces?.length && next < activeBoard().length - 1) {
+    player.position = enteringBranch.from;
+    player.branch = { id: enteringBranch.id, index: 0 };
+    addLog(`${player.name} は分岐ルートに入りました。`);
+    return;
+  }
+  player.position = next;
+}
+
 async function rollMoveDice() {
   const player = currentPlayer();
   if (!player || state.phase !== "turn") return;
@@ -1006,26 +1053,26 @@ async function rollMoveDice() {
   const bonus = player.rollBonus || 0;
   player.rollBonus = 0;
   const total = baseRoll + bonus;
-  const start = player.position;
-  const destination = clamp(start + total, 0, activeBoard().length - 1);
   els.diceFace.textContent = total;
   isAnimatingMove = true;
-  for (let position = start + 1; position <= destination; position += 1) {
-    player.position = position;
+  for (let step = 0; step < total; step += 1) {
+    const before = player.position;
+    stepPlayerForward(player);
     renderBoard();
     await sleep(180);
+    if (!player.branch && player.position === activeBoard().length - 1) break;
+    if (!player.branch && player.position === before && before === activeBoard().length - 1) break;
   }
-  if (destination === start) renderBoard();
   isAnimatingMove = false;
   player.turnCount += 1;
   addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
-  showSpaceEffect(player.position, activeBoard()[player.position]);
+  showSpaceEffect(player.position, currentSpaceTypeFor(player));
   resolveSpace(player);
   renderAll();
 }
 
 function resolveSpace(player) {
-  const type = activeBoard()[player.position];
+  const type = currentSpaceTypeFor(player);
   const name = spaceTypes[type].label;
   addLog(`${player.name} は「${name}」に止まりました。`);
 
@@ -1082,6 +1129,7 @@ function advanceTurn() {
   const alive = livingPlayers();
   if (alive.length < 2) {
     state.phase = "gameover";
+    state.winnerId = alive[0]?.id || null;
     addLog(`${alive[0]?.name || "最後のプレイヤー"} が勝者です。`);
     markChanged();
     renderAll();
@@ -1182,6 +1230,7 @@ function closeShopOrForge() {
 
 function openForge(player) {
   state.phase = "forge";
+  selectedSynthesis = [];
   addLog(`${player.name} は鍛造マスで装備を整えられます。`);
   renderAll();
 }
@@ -1215,30 +1264,55 @@ function upgradePlacedItem(uidValue) {
   renderAll();
 }
 
+function synthesisCandidates(player) {
+  return [
+    ...player.stash.map((entry) => ({ entry, source: "手持ち" })),
+    ...player.backpack.map((entry) => ({ entry, source: "バッグ" })),
+  ];
+}
+
+function findSynthesisCandidate(player, uidValue) {
+  return synthesisCandidates(player).find((candidate) => candidate.entry.uid === uidValue) || null;
+}
+
 function synthesizeItems() {
   const player = currentPlayer();
   if (!player) return;
   if (!requirePlayerControl(player)) return;
-  const byRarity = {};
-  for (const item of player.stash) {
-    const rarity = itemById(item.itemId).rarity;
-    byRarity[rarity] = byRarity[rarity] || [];
-    byRarity[rarity].push(item);
-  }
-  const rarity = rarityOrder.find((key) => byRarity[key]?.length >= 2 && key !== "gold");
-  if (!rarity) {
-    addLog("合成できる同レアリティの手持ちアイテムがありません。");
+  const used = selectedSynthesis
+    .map((uidValue) => findSynthesisCandidate(player, uidValue)?.entry)
+    .filter(Boolean);
+  if (used.length !== 2) {
+    addLog("合成するアイテムを2つ選んでください。");
     return;
   }
-  const used = byRarity[rarity].slice(0, 2);
+  const rarity = itemById(used[0].itemId).rarity;
+  if (rarity === "gold" || itemById(used[1].itemId).rarity !== rarity) {
+    addLog("同じレアリティのアイテム2つだけ合成できます。");
+    return;
+  }
   player.stash = player.stash.filter((item) => !used.includes(item));
+  player.backpack = player.backpack.filter((item) => !used.includes(item));
   const nextRarity = rarityOrder[rarityOrder.indexOf(rarity) + 1];
   const pool = itemCatalog.filter((item) => item.rarity === nextRarity);
   const created = makeItem(choice(pool).id);
   player.stash.push(created);
+  selectedSynthesis = [];
   queueItemGain(player, [created]);
   addLog(`${player.name} は ${rarityNames[rarity]}アイテム2つを合成し、${itemById(created.itemId).name} を得ました。`);
   renderAll();
+}
+
+function toggleSynthesisItem(uidValue) {
+  const player = currentPlayer();
+  if (!player || !requirePlayerControl(player)) return;
+  if (!findSynthesisCandidate(player, uidValue)) return;
+  if (selectedSynthesis.includes(uidValue)) {
+    selectedSynthesis = selectedSynthesis.filter((id) => id !== uidValue);
+  } else {
+    selectedSynthesis = [...selectedSynthesis, uidValue].slice(-2);
+  }
+  renderShop();
 }
 
 function openCombatChoice(player) {
@@ -1467,6 +1541,7 @@ function finishBattle() {
 
   if (battle.isFinal) {
     state.phase = "gameover";
+    state.winnerId = winnerPlayer.id;
     addLog(`最終対決の勝者は ${winnerPlayer.name}。ゲーム終了です。`);
   } else {
     winnerPlayer.money += 90;
@@ -1970,6 +2045,23 @@ function renderBoard() {
   const board = activeBoard();
   const branches = activeBranches();
   els.boardGrid.style.gridTemplateColumns = "";
+  const makeToken = (player) => {
+    const token = document.createElement("span");
+    token.className = "token";
+    token.style.background = player.color;
+    const avatar = document.createElement("span");
+    avatar.className = "token-avatar";
+    avatar.textContent = player.avatar || player.name.slice(-1);
+    token.append(avatar);
+    const gain = recentItemGainFor(player);
+    if (gain) {
+      const popup = document.createElement("span");
+      popup.className = "item-gain-pop";
+      popup.textContent = gain.icons;
+      token.append(popup);
+    }
+    return token;
+  };
   board.forEach((type, index) => {
     const info = spaceTypes[type];
     const space = document.createElement("div");
@@ -1985,33 +2077,25 @@ function renderBoard() {
     if (branch) {
       const branchPath = document.createElement("div");
       branchPath.className = `branch-path branch-${branch.side}`;
-      branch.spaces.forEach((branchType) => {
+      branch.spaces.forEach((branchType, branchIndex) => {
         const node = document.createElement("span");
         node.className = "branch-node";
         node.style.setProperty("--space-color", spaceTypes[branchType]?.color || spaceTypes.plus.color);
+        const branchTokens = document.createElement("span");
+        branchTokens.className = "branch-tokens";
+        state.players
+          .filter((player) => player.branch?.id === branch.id && player.branch.index === branchIndex)
+          .forEach((player) => branchTokens.append(makeToken(player)));
+        node.append(branchTokens);
         branchPath.append(node);
       });
       space.append(branchPath);
     }
     const tokens = space.querySelector(".tokens");
     state.players
-      .filter((player) => player.position === index)
+      .filter((player) => !player.branch && player.position === index)
       .forEach((player) => {
-        const token = document.createElement("span");
-        token.className = "token";
-        token.style.background = player.color;
-        const avatar = document.createElement("span");
-        avatar.className = "token-avatar";
-        avatar.textContent = player.avatar || player.name.slice(-1);
-        token.append(avatar);
-        const gain = recentItemGainFor(player);
-        if (gain) {
-          const popup = document.createElement("span");
-          popup.className = "item-gain-pop";
-          popup.textContent = gain.icons;
-          token.append(popup);
-        }
-        tokens.append(token);
+        tokens.append(makeToken(player));
       });
     els.boardGrid.append(space);
   });
@@ -2416,6 +2500,24 @@ function renderShop() {
     }
   } else if (state.phase === "forge") {
     els.shopTitle.textContent = "鍛造";
+    const synthGrid = document.createElement("div");
+    synthGrid.className = "shop-grid synth-grid";
+    const candidates = synthesisCandidates(player);
+    candidates.forEach((candidate) => {
+      const stashItem = candidate.entry;
+      const item = itemById(stashItem.itemId);
+      const card = document.createElement("div");
+      card.className = `shop-item synth-item ${selectedSynthesis.includes(stashItem.uid) ? "selected" : ""}`;
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</h3><p>${candidate.source} / ${rarityNames[item.rarity]} / ${item.w}×${item.h}</p>`;
+      card.append(actionButton(selectedSynthesis.includes(stashItem.uid) ? "選択中" : "合成に選ぶ", "secondary-button", () => toggleSynthesisItem(stashItem.uid)));
+      synthGrid.append(card);
+    });
+    if (candidates.length) {
+      const synthTitle = document.createElement("h3");
+      synthTitle.className = "shop-subtitle";
+      synthTitle.textContent = "合成するアイテムを2つ選択";
+      els.shopContent.append(synthTitle, synthGrid);
+    }
     const grid = document.createElement("div");
     grid.className = "shop-grid";
     player.backpack.forEach((entry) => {
@@ -2427,13 +2529,34 @@ function renderShop() {
       grid.append(card);
     });
     els.shopContent.append(grid);
-    els.shopContent.append(actionButton("同レア2個を合成", "secondary-button", synthesizeItems));
+    els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2));
   }
+}
+
+function renderVictoryCelebration() {
+  const winner = state.players.find((player) => player.id === state.winnerId) || livingPlayers()[0] || state.players[0];
+  if (!winner) return;
+  els.battleTimer.textContent = "完全勝利";
+  const shinePieces = Array.from({ length: 18 }, (_, index) => `<span style="--i:${index}"></span>`).join("");
+  els.battleArena.innerHTML = `
+    <div class="victory-celebration" style="--winner-color:${winner.color || "#d7a12b"}">
+      <div class="victory-confetti">${shinePieces}</div>
+      <div class="victory-crown">👑</div>
+      <div class="victory-avatar" style="background:${winner.color || "#fff4c4"}">${escapeHtml(winner.avatar || "😀")}</div>
+      <h3>勝者</h3>
+      <strong>${escapeHtml(winner.name)}</strong>
+      <p>死は救済すごろく、人生終了ゲームを制しました。</p>
+    </div>
+  `;
 }
 
 function renderBattle() {
   els.battlePanel.classList.toggle("hidden", !["battlePrep", "battle", "battleResult", "final", "gameover"].includes(state.phase) && !state.battle);
   els.battleArena.innerHTML = "";
+  if (state.phase === "gameover") {
+    renderVictoryCelebration();
+    return;
+  }
   if (!state.battle) {
     els.battleTimer.textContent = "待機";
     return;
