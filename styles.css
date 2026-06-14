@@ -502,11 +502,26 @@ textarea {
   position: absolute;
   left: 50%;
   display: flex;
-  gap: 7px;
-  transform: translateX(-12px) rotate(-28deg);
+  gap: 9px;
+  transform: translateX(-10px) rotate(-28deg);
   transform-origin: left center;
   pointer-events: none;
-  z-index: 0;
+  z-index: 3;
+}
+
+.branch-path::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  top: 50%;
+  height: 8px;
+  transform: translateY(-50%);
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  background: repeating-linear-gradient(90deg, #211907 0 8px, #ffe79b 8px 14px);
+  box-shadow: 0 3px 0 rgba(33, 25, 7, 0.25);
+}
 }
 
 .branch-top {
@@ -520,14 +535,41 @@ textarea {
 
 .branch-node {
   position: relative;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  border: 3px solid #211907;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 4px solid #211907;
   border-radius: 6px;
   background: var(--space-color);
-  box-shadow: 0 3px 0 rgba(33, 25, 7, 0.24);
-  opacity: 0.94;
+  box-shadow: 0 4px 0 rgba(33, 25, 7, 0.32), inset 0 -5px 0 rgba(33, 25, 7, 0.14);
+  opacity: 1;
+  z-index: 1;
+}
+
+.space.has-branch {
+  box-shadow:
+    0 5px 0 rgba(33, 25, 7, 0.32),
+    0 0 0 5px rgba(255, 231, 155, 0.74),
+    inset 0 -7px 0 rgba(33, 25, 7, 0.14);
+}
+
+.space.has-branch::after {
+  content: "⇄";
+  position: absolute;
+  left: 50%;
+  top: -28px;
+  display: grid;
+  width: 30px;
+  height: 22px;
+  place-items: center;
+  transform: translateX(-50%);
+  border: 2px solid #211907;
+  border-radius: 999px;
+  background: #fff7cf;
+  color: #211907;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 3px 0 rgba(33, 25, 7, 0.2);
 }
 
 .branch-tokens {
@@ -839,6 +881,24 @@ textarea {
   gap: 8px;
 }
 
+.special-dice-button {
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #fff9d8, #fff, #e7f6ff);
+}
+
+.special-dice-button img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.special-dice-button small {
+  color: #8a6f24;
+  font-size: 10px;
+}
+
 .message-box {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1076,6 +1136,14 @@ textarea {
   padding: 4px;
 }
 
+.placed-item-tile.selected,
+.placed-item-tile.touch-dragging {
+  outline: 4px solid rgba(255, 245, 180, 0.95);
+  z-index: 8;
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+}
+
 .placed-item-icon {
   font-size: clamp(24px, 8vmin, 48px);
   line-height: 1;
@@ -1193,6 +1261,14 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.dice-shop-item img {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 4px 0 rgba(33, 25, 7, 0.22));
 }
 
 .synth-item {

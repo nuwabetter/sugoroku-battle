@@ -59,7 +59,7 @@ const itemCatalog = [
     h: 2,
     price: 35,
     sell: 12,
-    damage: 8,
+    damage: 5,
     interval: 2400,
     description: "戦闘中、一定間隔で相手を攻撃する。",
   },
@@ -88,6 +88,19 @@ const itemCatalog = [
     description: "戦闘開始時にシールドを得る。",
   },
   {
+    id: "lucky_clover",
+    name: "幸運クローバー",
+    rarity: "white",
+    type: "support",
+    w: 1,
+    h: 1,
+    price: 32,
+    sell: 12,
+    income: 6,
+    shield: 2,
+    description: "少しお金とシールドを得る小さなお守り。",
+  },
+  {
     id: "quick_dagger",
     name: "早業ダガー",
     rarity: "green",
@@ -96,9 +109,21 @@ const itemCatalog = [
     h: 1,
     price: 58,
     sell: 24,
-    damage: 6,
+    damage: 4,
     interval: 1400,
     description: "軽く素早く攻撃する。",
+  },
+  {
+    id: "guard_glove",
+    name: "守りの手袋",
+    rarity: "green",
+    type: "defense",
+    w: 1,
+    h: 2,
+    price: 60,
+    sell: 24,
+    shield: 10,
+    description: "戦闘開始時にまとまったシールドを得る。",
   },
   {
     id: "herb_kit",
@@ -122,9 +147,21 @@ const itemCatalog = [
     h: 1,
     price: 64,
     sell: 26,
-    poison: 3,
+    poison: 2,
     interval: 2600,
     description: "相手に防ぎにくい継続ダメージを与える。",
+  },
+  {
+    id: "merchant_badge",
+    name: "商人バッジ",
+    rarity: "green",
+    type: "support",
+    w: 1,
+    h: 1,
+    price: 70,
+    sell: 28,
+    income: 16,
+    description: "行動ターン開始時の収入を増やす。",
   },
   {
     id: "iron_axe",
@@ -135,9 +172,23 @@ const itemCatalog = [
     h: 2,
     price: 105,
     sell: 46,
-    damage: 18,
+    damage: 11,
     interval: 3200,
     description: "遅いが重い一撃を放つ。",
+  },
+  {
+    id: "ice_wand",
+    name: "氷結ワンド",
+    rarity: "blue",
+    type: "debuff",
+    w: 1,
+    h: 2,
+    price: 118,
+    sell: 52,
+    damage: 7,
+    weaken: 0.08,
+    interval: 3000,
+    description: "軽い攻撃と攻撃力低下を併せ持つ。",
   },
   {
     id: "focus_lens",
@@ -148,7 +199,7 @@ const itemCatalog = [
     h: 1,
     price: 95,
     sell: 42,
-    boost: 0.18,
+    boost: 0.11,
     description: "隣接する攻撃アイテムの威力を上げる。",
   },
   {
@@ -165,6 +216,20 @@ const itemCatalog = [
     description: "ターン開始時のお金と戦闘開始時シールドを得る。",
   },
   {
+    id: "repair_anvil",
+    name: "修理金床",
+    rarity: "blue",
+    type: "support",
+    w: 2,
+    h: 1,
+    price: 120,
+    sell: 54,
+    heal: 4,
+    shield: 8,
+    interval: 4200,
+    description: "戦闘中に回復し、開始時シールドも得る。",
+  },
+  {
     id: "storm_staff",
     name: "嵐の杖",
     rarity: "purple",
@@ -173,7 +238,7 @@ const itemCatalog = [
     h: 3,
     price: 175,
     sell: 82,
-    damage: 14,
+    damage: 8,
     interval: 1500,
     description: "高頻度で魔法攻撃を行う。",
   },
@@ -190,6 +255,20 @@ const itemCatalog = [
     description: "相手の攻撃力を下げる。",
   },
   {
+    id: "moon_amulet",
+    name: "月光アミュレット",
+    rarity: "purple",
+    type: "support",
+    w: 1,
+    h: 2,
+    price: 168,
+    sell: 78,
+    heal: 7,
+    income: 14,
+    interval: 3800,
+    description: "回復と収入を両立する高級なお守り。",
+  },
+  {
     id: "royal_banner",
     name: "王家の旗",
     rarity: "purple",
@@ -198,7 +277,7 @@ const itemCatalog = [
     h: 2,
     price: 190,
     sell: 88,
-    boostAll: 0.12,
+    boostAll: 0.08,
     income: 18,
     description: "全攻撃アイテムを強化し、お金も得る。",
   },
@@ -211,10 +290,24 @@ const itemCatalog = [
     h: 2,
     price: 320,
     sell: 155,
-    damage: 30,
+    damage: 18,
     interval: 2300,
     healOnHit: 4,
     description: "大ダメージを与え、命中時に少し回復する。",
+  },
+  {
+    id: "phoenix_feather",
+    name: "不死鳥の羽",
+    rarity: "gold",
+    type: "support",
+    w: 1,
+    h: 2,
+    price: 330,
+    sell: 160,
+    heal: 11,
+    shield: 18,
+    interval: 3600,
+    description: "強力な回復とシールドで粘り強く戦う。",
   },
   {
     id: "dragon_heart",
@@ -225,7 +318,7 @@ const itemCatalog = [
     h: 2,
     price: 360,
     sell: 170,
-    boostAll: 0.26,
+    boostAll: 0.16,
     shield: 20,
     description: "全攻撃を大きく強化し、戦闘開始時シールドを得る。",
   },
@@ -235,16 +328,23 @@ const itemIcons = {
   rusty_sword: "🗡️",
   coin_pouch: "💰",
   wooden_shield: "🛡️",
+  lucky_clover: "🍀",
   quick_dagger: "🔪",
+  guard_glove: "🧤",
   herb_kit: "🌿",
   poison_vial: "🧪",
+  merchant_badge: "🏷️",
   iron_axe: "🪓",
+  ice_wand: "🧊",
   focus_lens: "🔍",
   silver_bank: "🏦",
+  repair_anvil: "⚒️",
   storm_staff: "🌩️",
   hex_charm: "🔮",
+  moon_amulet: "🌙",
   royal_banner: "🚩",
   sun_blade: "☀️",
+  phoenix_feather: "🪶",
   dragon_heart: "💎",
 };
 
@@ -292,17 +392,27 @@ const boardPattern = [
 ];
 
 const randomSpaceWeights = [
-  ["plus", 50],
+  ["plus", 42],
   ["minus", 15],
-  ["shop", 9],
+  ["shop", 13],
   ["lucky", 9],
   ["combat", 9],
-  ["forge", 8],
+  ["forge", 12],
 ];
 
 const HAPPENING_CHANCE = 0.16;
 const ITEM_GAIN_EFFECT_MS = 1450;
 const BATTLE_ACTION_EFFECT_MS = 1000;
+const SPECIAL_DICE = {
+  d12: {
+    id: "d12",
+    name: "十二面サイコロ",
+    sides: 12,
+    uses: 3,
+    price: 140,
+    image: "./assets/d12-dice.png",
+  },
+};
 const happenings = {
   minefield: { label: "地雷原", icon: "💥", className: "happening-minefield" },
   clover: { label: "クローバー", icon: "🍀", className: "happening-clover" },
@@ -315,6 +425,7 @@ let selectedItem = null;
 let selectedSynthesis = [];
 let placementPreview = null;
 let touchDrag = null;
+let dragSource = null;
 let isAnimatingMove = false;
 let uiEffects = {
   space: null,
@@ -333,6 +444,9 @@ let online = {
   isHost: false,
   isApplyingRemote: false,
   isPushing: false,
+  pushQueued: false,
+  localDirtyUntil: 0,
+  lastAppliedVersion: 0,
   saveTimer: null,
   modules: null,
   app: null,
@@ -359,6 +473,7 @@ const els = {
   boardSizeValue: document.getElementById("boardSizeValue"),
   nameFields: document.getElementById("nameFields"),
   startGameButton: document.getElementById("startGameButton"),
+  boardWrap: document.querySelector(".board-wrap"),
   boardGrid: document.getElementById("boardGrid"),
   legend: document.getElementById("legend"),
   phaseBadge: document.getElementById("phaseBadge"),
@@ -403,8 +518,10 @@ function newGameState() {
     currentIndex: 0,
     editorPlayerId: null,
     pendingShop: [],
+    pendingShopDice: [],
     battle: null,
     winnerId: null,
+    syncVersion: 0,
     effects: {
       itemGains: [],
       battleActions: [],
@@ -505,11 +622,11 @@ function createBoardBranches(board) {
 
 function ensureMinimumSpaces(board) {
   const minimums = {
-    plus: Math.ceil(board.length * 0.34),
-    shop: Math.max(2, Math.floor(board.length / 18)),
+    plus: Math.ceil(board.length * 0.26),
+    shop: Math.max(3, Math.floor(board.length / 13)),
     lucky: Math.max(2, Math.floor(board.length / 24)),
     combat: Math.max(2, Math.floor(board.length / 24)),
-    forge: Math.max(1, Math.floor(board.length / 28)),
+    forge: Math.max(2, Math.floor(board.length / 18)),
   };
   Object.entries(minimums).forEach(([type, minimum]) => {
     while (countSpaces(board, type) < minimum) {
@@ -650,6 +767,7 @@ function recentBattleActionFor(playerId, role) {
 }
 
 function normalizeGameState(gameState) {
+  gameState.syncVersion = Number(gameState.syncVersion) || 0;
   gameState.boardSize = clamp(Number(gameState.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
     gameState.board = createBoardPattern(gameState.boardSize);
@@ -659,6 +777,7 @@ function normalizeGameState(gameState) {
     gameState.branches = createBoardBranches(gameState.board);
   }
   gameState.branches = sanitizeBranches(gameState.branches, gameState.board.length);
+  if (!Array.isArray(gameState.pendingShopDice)) gameState.pendingShopDice = [];
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -672,10 +791,27 @@ function normalizeGameState(gameState) {
       player.avatar = player.avatar || gameState.avatars[index] || avatarOptions[index] || "😀";
       if (player.branch && !gameState.branches.some((branch) => branch.id === player.branch.id)) player.branch = null;
       if (player.branch) player.branch.index = clamp(Number(player.branch.index) || 0, 0, 12);
+      normalizeSpecialDice(player);
       normalizeBackpack(player);
     });
   }
   return gameState;
+}
+
+function normalizeSpecialDice(player) {
+  if (!player) return;
+  if (!Array.isArray(player.specialDice)) player.specialDice = [];
+  player.specialDice = player.specialDice
+    .map((die) => {
+      const info = SPECIAL_DICE[die.type || die.id];
+      if (!info) return null;
+      return {
+        uid: die.uid || uid(),
+        type: info.id,
+        usesLeft: clamp(Number(die.usesLeft) || info.uses, 1, info.uses),
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeBackpack(player) {
@@ -743,6 +879,25 @@ function addRandomItems(player, count, minimum = "white") {
   return items;
 }
 
+function makeSpecialDice(type = "d12") {
+  const info = SPECIAL_DICE[type];
+  return {
+    uid: uid(),
+    type: info.id,
+    usesLeft: info.uses,
+  };
+}
+
+function addSpecialDice(player, type = "d12", reason = "") {
+  if (!player || !SPECIAL_DICE[type]) return null;
+  normalizeSpecialDice(player);
+  const die = makeSpecialDice(type);
+  player.specialDice.push(die);
+  const info = SPECIAL_DICE[type];
+  addLog(`${player.name} は ${info.name}${reason ? `を${reason}` : "を手に入れました"}。`);
+  return die;
+}
+
 function createPlayers() {
   return Array.from({ length: state.setupCount }, (_, index) => ({
     id: index + 1,
@@ -754,12 +909,13 @@ function createPlayers() {
     turnCount: 0,
     orderRoll: null,
     rollBonus: 0,
+    specialDice: [],
     shopDiscount: false,
     nextBattlePenalty: 0,
     backpackW: 4,
     backpackH: 4,
     backpack: [],
-    stash: [],
+    stash: [makeItem("rusty_sword")],
     defeated: false,
     branch: null,
   }));
@@ -773,22 +929,37 @@ function addLog(text) {
 }
 
 function markChanged() {
+  if (!online.isApplyingRemote) {
+    state.syncVersion = (Number(state.syncVersion) || 0) + 1;
+    online.localDirtyUntil = Date.now() + 1600;
+  }
   if (!online.enabled || !online.ready || online.isApplyingRemote || !online.roomRef) return;
+  if (online.isPushing) {
+    online.pushQueued = true;
+    return;
+  }
   window.clearTimeout(online.saveTimer);
-  online.saveTimer = window.setTimeout(pushOnlineState, 180);
+  online.saveTimer = window.setTimeout(pushOnlineState, 80);
 }
 
 async function pushOnlineState() {
-  if (!online.enabled || !online.ready || online.isApplyingRemote || online.isPushing || !online.roomRef) return;
+  if (!online.enabled || !online.ready || online.isApplyingRemote || !online.roomRef) return;
+  if (online.isPushing) {
+    online.pushQueued = true;
+    return;
+  }
   online.isPushing = true;
+  online.pushQueued = false;
   try {
     const { setDoc, serverTimestamp } = online.modules;
+    const snapshotState = structuredCloneForSync(state);
     await setDoc(
       online.roomRef,
       {
-        state: structuredCloneForSync(state),
+        state: snapshotState,
         updatedAt: serverTimestamp(),
         updatedBy: online.clientId,
+        syncVersion: snapshotState.syncVersion,
       },
       { merge: true },
     );
@@ -796,6 +967,10 @@ async function pushOnlineState() {
     setOnlineStatus(`同期失敗: ${error.message}`);
   } finally {
     online.isPushing = false;
+    if (online.pushQueued) {
+      window.clearTimeout(online.saveTimer);
+      online.saveTimer = window.setTimeout(pushOnlineState, 80);
+    }
   }
 }
 
@@ -1106,16 +1281,28 @@ function maybeTriggerHappening(player, spaceType) {
   return true;
 }
 
-async function rollMoveDice() {
+async function rollMoveDice(dieUid = null) {
   const player = currentPlayer();
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
   if (isAnimatingMove) return;
-  const baseRoll = rand(1, 6);
+  normalizeSpecialDice(player);
+  const specialDie = dieUid ? player.specialDice.find((die) => die.uid === dieUid) : null;
+  const dieInfo = specialDie ? SPECIAL_DICE[specialDie.type] : null;
+  const sides = dieInfo?.sides || 6;
+  const baseRoll = rand(1, sides);
   const bonus = player.rollBonus || 0;
   player.rollBonus = 0;
   const total = baseRoll + bonus;
   els.diceFace.textContent = total;
+  if (specialDie) {
+    specialDie.usesLeft -= 1;
+    addLog(`${player.name} は ${dieInfo.name} を使いました。残り ${Math.max(0, specialDie.usesLeft)} 回。`);
+    if (specialDie.usesLeft <= 0) {
+      player.specialDice = player.specialDice.filter((die) => die.uid !== specialDie.uid);
+      addLog(`${dieInfo.name} は使い切りました。`);
+    }
+  }
   isAnimatingMove = true;
   for (let step = 0; step < total; step += 1) {
     const before = player.position;
@@ -1136,6 +1323,8 @@ async function rollMoveDice() {
 function resolveSpace(player) {
   const type = currentSpaceTypeFor(player);
   const name = spaceTypes[type].label;
+  const landedPosition = player.position;
+  const landedBranch = player.branch ? { ...player.branch } : null;
   addLog(`${player.name} は「${name}」に止まりました。`);
 
   if (type === "plus") {
@@ -1144,6 +1333,8 @@ function resolveSpace(player) {
     const items = addRandomItems(player, rand(2, 3), "white");
     addLog(`${player.name} は ${money}G と ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
     maybeTriggerHappening(player, type);
+    player.position = landedPosition;
+    player.branch = landedBranch;
     finishAction();
   } else if (type === "minus") {
     const loss = Math.min(player.money, rand(20, 60));
@@ -1151,15 +1342,19 @@ function resolveSpace(player) {
     player.nextBattlePenalty += 0.12;
     addLog(`${player.name} は ${loss}G を失い、次の戦闘で攻撃力が下がります。`);
     maybeTriggerHappening(player, type);
+    player.position = landedPosition;
+    player.branch = landedBranch;
     finishAction();
   } else if (type === "lucky") {
-    const effect = choice(["item", "dash", "discount"]);
+    const effect = choice(["item", "dash", "discount", "dice"]);
     if (effect === "item") {
       const items = addRandomItems(player, 2, "green");
       addLog(`${player.name} は幸運で ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
     } else if (effect === "dash") {
       player.rollBonus += 3;
       addLog(`${player.name} は次の移動ダイスに +3 を得ました。`);
+    } else if (effect === "dice") {
+      addSpecialDice(player, "d12", "ラッキーマスで手に入れました");
     } else {
       player.shopDiscount = true;
       addLog(`${player.name} は次のショップで半額券を使えます。`);
@@ -1238,8 +1433,30 @@ function triggerEvent() {
 function openShop(player) {
   state.phase = "shop";
   state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
+  state.pendingShopDice = Math.random() < 0.78 ? [makeSpecialDice("d12")] : [];
   els.shopPanel.classList.remove("hidden");
   addLog(`${player.name} はショップに入りました。`);
+  renderAll();
+}
+
+function buySpecialDice(uidValue) {
+  const player = currentPlayer();
+  if (!player || !requirePlayerControl(player)) return;
+  if (!Array.isArray(state.pendingShopDice)) state.pendingShopDice = [];
+  const index = state.pendingShopDice.findIndex((die) => die.uid === uidValue);
+  if (index < 0) return;
+  const die = state.pendingShopDice[index];
+  const info = SPECIAL_DICE[die.type];
+  if (!info) return;
+  if (player.money < info.price) {
+    addLog(`${player.name} は ${info.name} を買うお金が足りません。`);
+    return;
+  }
+  player.money -= info.price;
+  normalizeSpecialDice(player);
+  player.specialDice.push(die);
+  state.pendingShopDice.splice(index, 1);
+  addLog(`${player.name} は ${info.name} を ${info.price}G で購入しました。`);
   renderAll();
 }
 
@@ -1555,7 +1772,7 @@ function battleTick() {
 }
 
 function calculateDamage(player, entry, item) {
-  let damage = (item.damage || item.poison || 0) + (entry.level - 1) * 4 + rarityValue(item.rarity);
+  let damage = (item.damage || item.poison || 0) + (entry.level - 1) * 2 + Math.ceil(rarityValue(item.rarity) / 2);
   const placed = placedItems(player);
   const adjacentBoost = placed.reduce((sum, other) => {
     const otherItem = itemById(other.itemId);
@@ -1610,6 +1827,7 @@ function finishBattle() {
   } else {
     winnerPlayer.money += 90;
     addRandomItems(winnerPlayer, 2, "green");
+    addSpecialDice(winnerPlayer, "d12", "戦闘報酬で手に入れました");
     battle.participants.forEach((fighter) => {
       if (fighter.playerId !== winner.playerId) {
         const player = state.players.find((p) => p.id === fighter.playerId);
@@ -1662,7 +1880,7 @@ function occupiedCells(placed) {
   return cells;
 }
 
-function canPlace(player, stashItem, x, y) {
+function canPlace(player, stashItem, x, y, ignoreUid = null) {
   const item = itemById(stashItem.itemId);
   if (x + item.w > player.backpackW || y + item.h > player.backpackH) return false;
   const newCells = [];
@@ -1671,12 +1889,24 @@ function canPlace(player, stashItem, x, y) {
       newCells.push(`${xx},${yy}`);
     }
   }
-  const occupied = new Set(player.backpack.flatMap((entry) => occupiedCells(entry).map((cell) => `${cell.x},${cell.y}`)));
+  const occupied = new Set(
+    player.backpack
+      .filter((entry) => entry.uid !== ignoreUid)
+      .flatMap((entry) => occupiedCells(entry).map((cell) => `${cell.x},${cell.y}`)),
+  );
   return newCells.every((cell) => !occupied.has(cell));
 }
 
 function selectedStashItem(player) {
   return player?.stash.find((item) => item.uid === selectedItem) || null;
+}
+
+function selectedBackpackItem(player) {
+  return player?.backpack.find((item) => item.uid === selectedItem) || null;
+}
+
+function selectedPlacementItem(player) {
+  return selectedStashItem(player) || selectedBackpackItem(player);
 }
 
 function footprintCells(item, x, y) {
@@ -1700,13 +1930,13 @@ function setPlacementPreview(x, y) {
 
 function renderPlacementPreview() {
   const player = selectedEditorPlayer();
-  const stashItem = selectedStashItem(player);
+  const stashItem = selectedPlacementItem(player);
   els.backpackGrid.querySelectorAll(".grid-cell").forEach((cell) => {
     cell.classList.remove("preview-valid", "preview-invalid", "preview-anchor");
   });
   if (!player || !stashItem || !placementPreview) return;
   const item = itemById(stashItem.itemId);
-  const valid = canPlace(player, stashItem, placementPreview.x, placementPreview.y);
+  const valid = canPlace(player, stashItem, placementPreview.x, placementPreview.y, selectedBackpackItem(player)?.uid || null);
   const cells = footprintCells(item, placementPreview.x, placementPreview.y);
   cells.forEach((key) => {
     const cell = els.backpackGrid.querySelector(`.grid-cell[data-cell="${key}"]`);
@@ -1767,6 +1997,19 @@ function placeSelectedItem(x, y) {
     localNotice("担当プレイヤーのバックパックだけ編集できます。");
     return;
   }
+  const placed = player.backpack.find((item) => item.uid === selectedItem);
+  if (placed) {
+    if (!canPlace(player, placed, x, y, placed.uid)) {
+      addLog("その場所にはアイテムを移動できません。");
+      return;
+    }
+    placed.x = x;
+    placed.y = y;
+    addLog(`${player.name} は ${itemById(placed.itemId).name} をバックパック内で移動しました。`);
+    renderBackpack();
+    markChanged();
+    return;
+  }
   const stashIndex = player.stash.findIndex((item) => item.uid === selectedItem);
   if (stashIndex < 0) return;
   const stashItem = player.stash[stashIndex];
@@ -1814,7 +2057,20 @@ function trashSelectedItem() {
   }
   const index = player.stash.findIndex((item) => item.uid === selectedItem);
   if (index < 0) {
-    localNotice("捨てるアイテムを手持ちから選んでください。");
+    const backpackIndex = player.backpack.findIndex((item) => item.uid === selectedItem);
+    if (backpackIndex < 0) {
+      localNotice("捨てるアイテムを選んでください。");
+      return;
+    }
+    const item = player.backpack[backpackIndex];
+    const catalog = itemById(item.itemId);
+    const ok = window.confirm(`${catalog.name} を捨てますか？`);
+    if (!ok) return;
+    player.backpack.splice(backpackIndex, 1);
+    selectedItem = null;
+    addLog(`${player.name} は ${catalog.name} を捨てました。`);
+    renderBackpack();
+    markChanged();
     return;
   }
   const item = player.stash[index];
@@ -1832,6 +2088,7 @@ function renderAll() {
   renderOnline();
   if (state.phase === "setup") renderSetup();
   renderSetupVisibility();
+  state.players.forEach(normalizeSpecialDice);
   state.players.forEach(normalizeBackpack);
   renderBoard();
   renderPlayers();
@@ -1889,6 +2146,7 @@ async function createOnlineRoom() {
       seats: { [online.clientId]: 1 },
       state: structuredCloneForSync(state),
       updatedBy: online.clientId,
+      syncVersion: state.syncVersion,
     });
     subscribeOnlineRoom();
     setOnlineStatus(`部屋 ${online.roomId} を作成しました。`);
@@ -2016,10 +2274,14 @@ function subscribeOnlineRoom() {
     const data = snapshot.data();
     if (!data?.state) return;
     online.isHost = data.hostId === online.clientId;
+    const remoteVersion = Number(data.state.syncVersion ?? data.syncVersion) || 0;
+    const localVersion = Number(state.syncVersion) || 0;
     if (data.state.phase === "setup") {
       data.state.setupCount = setupCountFromSeats(data.seats || {});
     }
     if (data.updatedBy === online.clientId && state.phase !== "setup") return;
+    if (remoteVersion < localVersion) return;
+    if (Date.now() < online.localDirtyUntil && remoteVersion <= localVersion) return;
     applyRemoteState(data.state);
   });
 }
@@ -2028,6 +2290,8 @@ function applyRemoteState(remoteState) {
   online.isApplyingRemote = true;
   clearBattleLoops();
   state = normalizeGameState(remoteState);
+  online.lastAppliedVersion = Number(state.syncVersion) || 0;
+  online.localDirtyUntil = 0;
   selectedItem = null;
   scheduleOnlineBattleLoops();
   renderAll();
@@ -2146,6 +2410,7 @@ function renderBoard() {
     space.innerHTML = `<div class="tokens"></div>`;
     const branch = branches.find((entry) => entry.from === index);
     if (branch) {
+      space.classList.add("has-branch", `has-branch-${branch.side}`);
       const branchPath = document.createElement("div");
       branchPath.className = `branch-path branch-${branch.side}`;
       branch.spaces.forEach((branchType, branchIndex) => {
@@ -2171,11 +2436,12 @@ function renderBoard() {
     els.boardGrid.append(space);
   });
   const followPlayer = currentPlayer();
-  if (followPlayer && !document.body.classList.contains("prep-view")) {
+  if (followPlayer && els.boardWrap && !document.body.classList.contains("prep-view")) {
     const target = els.boardGrid.children[followPlayer.position];
     if (target) {
       window.requestAnimationFrame(() => {
-        target.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+        const left = target.offsetLeft + target.offsetWidth / 2 - els.boardWrap.clientWidth / 2;
+        els.boardWrap.scrollTo({ left: Math.max(0, left), behavior: isAnimatingMove ? "auto" : "smooth" });
       });
     }
   }
@@ -2209,6 +2475,7 @@ function renderPlayers() {
         <span>💰 ${player.money}G</span>
         <span>📍 ${player.position + 1}</span>
         <span>🎒 ${player.stash.length}/3</span>
+        <span>🎲 ${player.specialDice.length}</span>
         <span>▦ ${player.backpackW}×${player.backpackH}</span>
         <span>↻ ${player.turnCount}</span>
         <span>${player.nextBattlePenalty ? "⚠ 不利" : "✓ 通常"}</span>
@@ -2239,6 +2506,14 @@ function renderTurn() {
   if (state.phase === "turn") {
     els.turnTitle.textContent = `${player.name} の行動ターン`;
     els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player) || isAnimatingMove));
+    normalizeSpecialDice(player);
+    player.specialDice.forEach((die) => {
+      const info = SPECIAL_DICE[die.type];
+      if (!info) return;
+      const button = actionButton(`${info.name} 残り${die.usesLeft}`, "secondary-button special-dice-button", () => rollMoveDice(die.uid), !canControlPlayer(player) || isAnimatingMove);
+      button.innerHTML = `<img src="${info.image}" alt="" /> <span>${info.name}</span><small>残り${die.usesLeft}</small>`;
+      els.actionArea.append(button);
+    });
     return;
   }
 
@@ -2353,6 +2628,7 @@ function renderBackpack() {
     card.draggable = editable;
     card.addEventListener("dragstart", (event) => {
       selectedItem = stashItem.uid;
+      dragSource = "stash";
       event.dataTransfer.setData("text/plain", stashItem.uid);
       event.dataTransfer.effectAllowed = "move";
       showItemDetail(stashItem, item);
@@ -2363,10 +2639,14 @@ function renderBackpack() {
       const cell = cellFromPoint(event.clientX, event.clientY);
       if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
     });
-    card.addEventListener("dragend", clearPlacementPreview);
+    card.addEventListener("dragend", () => {
+      dragSource = null;
+      clearPlacementPreview();
+    });
     card.addEventListener("pointerdown", (event) => {
       if (!editable || event.pointerType === "mouse") return;
       selectedItem = stashItem.uid;
+      dragSource = "stash";
       touchDrag = { uid: stashItem.uid, pointerId: event.pointerId, element: card };
       card.setPointerCapture?.(event.pointerId);
       card.classList.add("touch-dragging");
@@ -2386,17 +2666,20 @@ function renderBackpack() {
       card.releasePointerCapture?.(event.pointerId);
       card.classList.remove("touch-dragging");
       touchDrag = null;
+      dragSource = null;
       placeFromCell(cell);
       event.preventDefault();
     });
     card.addEventListener("pointercancel", () => {
       card.classList.remove("touch-dragging");
       touchDrag = null;
+      dragSource = null;
       clearPlacementPreview();
     });
     card.addEventListener("touchstart", (event) => {
       if (!editable || touchDrag) return;
       selectedItem = stashItem.uid;
+      dragSource = "stash";
       touchDrag = { uid: stashItem.uid, touch: true, element: card };
       card.classList.add("touch-dragging");
       showItemDetail(stashItem, item);
@@ -2417,6 +2700,7 @@ function renderBackpack() {
       const cell = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
       card.classList.remove("touch-dragging");
       touchDrag = null;
+      dragSource = null;
       placeFromCell(cell);
       event.preventDefault();
     }, { passive: false });
@@ -2464,7 +2748,10 @@ function renderBackpack() {
         const item = itemById(placed.itemId);
         cell.classList.add("occupied", `rare-${item.rarity}`);
         if (placed.x === x && placed.y === y) cell.classList.add("anchor");
-        cell.addEventListener("click", () => removePlacedItem(placed.uid));
+        cell.addEventListener("click", () => {
+          selectedItem = placed.uid;
+          renderBackpack();
+        });
       } else {
         cell.disabled = !editable;
         cell.addEventListener("click", () => placeSelectedItem(x, y));
@@ -2485,7 +2772,92 @@ function renderBackpack() {
       <span class="placed-item-name">${escapeHtml(item.name)}</span>
       <span class="placed-item-level">+${entry.level - 1}</span>
     `;
-    tile.addEventListener("click", () => removePlacedItem(entry.uid));
+    tile.draggable = editable;
+    tile.addEventListener("click", () => {
+      selectedItem = selectedItem === entry.uid ? null : entry.uid;
+      showItemDetail(entry, item);
+      renderBackpack();
+    });
+    tile.addEventListener("dragstart", (event) => {
+      if (!editable) return;
+      selectedItem = entry.uid;
+      dragSource = "backpack";
+      event.dataTransfer.setData("text/plain", entry.uid);
+      showItemDetail(entry, item);
+    });
+    tile.addEventListener("drag", (event) => {
+      if (!event.clientY) return;
+      autoScrollDuringDrag(event.clientY);
+    });
+    tile.addEventListener("dragend", () => {
+      dragSource = null;
+      clearPlacementPreview();
+    });
+    tile.addEventListener("pointerdown", (event) => {
+      if (!editable || event.pointerType === "mouse") return;
+      selectedItem = entry.uid;
+      dragSource = "backpack";
+      touchDrag = { uid: entry.uid, pointerId: event.pointerId, element: tile };
+      tile.setPointerCapture?.(event.pointerId);
+      tile.classList.add("touch-dragging");
+      showItemDetail(entry, item);
+    });
+    tile.addEventListener("pointermove", (event) => {
+      if (!touchDrag || touchDrag.uid !== entry.uid) return;
+      autoScrollDuringDrag(event.clientY);
+      const cell = cellFromPoint(event.clientX, event.clientY);
+      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+    });
+    tile.addEventListener("pointerup", (event) => {
+      if (!touchDrag || touchDrag.uid !== entry.uid) return;
+      const cell = cellFromPoint(event.clientX, event.clientY);
+      tile.releasePointerCapture?.(event.pointerId);
+      tile.classList.remove("touch-dragging");
+      touchDrag = null;
+      dragSource = null;
+      placeFromCell(cell);
+    });
+    tile.addEventListener("pointercancel", () => {
+      tile.classList.remove("touch-dragging");
+      touchDrag = null;
+      dragSource = null;
+      clearPlacementPreview();
+    });
+    tile.addEventListener("touchstart", (event) => {
+      if (!editable || touchDrag) return;
+      selectedItem = entry.uid;
+      dragSource = "backpack";
+      touchDrag = { uid: entry.uid, touch: true, element: tile };
+      tile.classList.add("touch-dragging");
+      showItemDetail(entry, item);
+      event.preventDefault();
+    }, { passive: false });
+    tile.addEventListener("touchmove", (event) => {
+      if (!touchDrag || touchDrag.uid !== entry.uid) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      autoScrollDuringDrag(touch.clientY);
+      const cell = cellFromPoint(touch.clientX, touch.clientY);
+      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      event.preventDefault();
+    }, { passive: false });
+    tile.addEventListener("touchend", (event) => {
+      if (!touchDrag || touchDrag.uid !== entry.uid) return;
+      const touch = event.changedTouches[0];
+      const cell = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
+      tile.classList.remove("touch-dragging");
+      touchDrag = null;
+      dragSource = null;
+      placeFromCell(cell);
+      event.preventDefault();
+    }, { passive: false });
+    tile.addEventListener("touchcancel", () => {
+      tile.classList.remove("touch-dragging");
+      touchDrag = null;
+      dragSource = null;
+      clearPlacementPreview();
+    });
+    tile.classList.toggle("selected", selectedItem === entry.uid);
     els.backpackGrid.append(tile);
     positionPlacedTile(tile, { ...entry, w: width, h: height });
   });
@@ -2554,6 +2926,23 @@ function renderShop() {
       grid.append(card);
     });
     els.shopContent.append(grid);
+    if (Array.isArray(state.pendingShopDice) && state.pendingShopDice.length) {
+      const diceTitle = document.createElement("h3");
+      diceTitle.className = "shop-subtitle";
+      diceTitle.textContent = "特殊サイコロ";
+      const diceGrid = document.createElement("div");
+      diceGrid.className = "shop-grid dice-shop-grid";
+      state.pendingShopDice.forEach((die) => {
+        const info = SPECIAL_DICE[die.type];
+        if (!info) return;
+        const card = document.createElement("div");
+        card.className = "shop-item dice-shop-item";
+        card.innerHTML = `<img src="${info.image}" alt="" /><h3>${info.name}</h3><p>1〜${info.sides} / ${info.uses}回使用<br>価格 ${info.price}G</p>`;
+        card.append(actionButton(`${info.price}Gで購入`, "secondary-button", () => buySpecialDice(die.uid)));
+        diceGrid.append(card);
+      });
+      els.shopContent.append(diceTitle, diceGrid);
+    }
     const expansionCost = 200 + Math.max(0, player.backpackW + player.backpackH - 8) * 100;
     els.shopContent.append(actionButton(`バックパック拡張 ${expansionCost}G`, "secondary-button", buyBackpackExpansion));
     const sellGrid = document.createElement("div");
