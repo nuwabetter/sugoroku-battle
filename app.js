@@ -412,6 +412,24 @@ const SPECIAL_DICE = {
     price: 140,
     image: "./assets/d12-dice.png",
   },
+  trick: {
+    id: "trick",
+    name: "からくりサイコロ",
+    sides: 6,
+    uses: 1,
+    price: 120,
+    choose: true,
+    image: "./assets/trick-dice.png",
+  },
+  gold: {
+    id: "gold",
+    name: "金サイコロ",
+    sides: 10,
+    uses: 1,
+    price: 110,
+    goldPerPip: 10,
+    image: "./assets/gold-dice.png",
+  },
 };
 const happenings = {
   minefield: { label: "地雷原", icon: "💥", className: "happening-minefield" },
@@ -519,6 +537,7 @@ function newGameState() {
     editorPlayerId: null,
     pendingShop: [],
     pendingShopDice: [],
+    shopRerolled: false,
     battle: null,
     winnerId: null,
     syncVersion: 0,
@@ -778,6 +797,7 @@ function normalizeGameState(gameState) {
   }
   gameState.branches = sanitizeBranches(gameState.branches, gameState.board.length);
   if (!Array.isArray(gameState.pendingShopDice)) gameState.pendingShopDice = [];
+  gameState.shopRerolled = Boolean(gameState.shopRerolled);
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -886,6 +906,10 @@ function makeSpecialDice(type = "d12") {
     type: info.id,
     usesLeft: info.uses,
   };
+}
+
+function randomSpecialDice() {
+  return makeSpecialDice(weightedChoice([["d12", 42], ["trick", 29], ["gold", 29]]));
 }
 
 function addSpecialDice(player, type = "d12", reason = "") {
@@ -1281,7 +1305,7 @@ function maybeTriggerHappening(player, spaceType) {
   return true;
 }
 
-async function rollMoveDice(dieUid = null) {
+async function rollMoveDice(dieUid = null, chosenRoll = null) {
   const player = currentPlayer();
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
@@ -1290,12 +1314,17 @@ async function rollMoveDice(dieUid = null) {
   const specialDie = dieUid ? player.specialDice.find((die) => die.uid === dieUid) : null;
   const dieInfo = specialDie ? SPECIAL_DICE[specialDie.type] : null;
   const sides = dieInfo?.sides || 6;
-  const baseRoll = rand(1, sides);
+  const baseRoll = dieInfo?.choose ? clamp(Number(chosenRoll) || 1, 1, sides) : rand(1, sides);
   const bonus = player.rollBonus || 0;
   player.rollBonus = 0;
   const total = baseRoll + bonus;
   els.diceFace.textContent = total;
   if (specialDie) {
+    if (dieInfo.goldPerPip) {
+      const bonusMoney = baseRoll * dieInfo.goldPerPip;
+      player.money += bonusMoney;
+      addLog(`${player.name} は ${dieInfo.name} で ${bonusMoney}G を得ました。`);
+    }
     specialDie.usesLeft -= 1;
     addLog(`${player.name} は ${dieInfo.name} を使いました。残り ${Math.max(0, specialDie.usesLeft)} 回。`);
     if (specialDie.usesLeft <= 0) {
@@ -1354,7 +1383,7 @@ function resolveSpace(player) {
       player.rollBonus += 3;
       addLog(`${player.name} は次の移動ダイスに +3 を得ました。`);
     } else if (effect === "dice") {
-      addSpecialDice(player, "d12", "ラッキーマスで手に入れました");
+      addSpecialDice(player, weightedChoice([["d12", 40], ["trick", 30], ["gold", 30]]), "ラッキーマスで手に入れました");
     } else {
       player.shopDiscount = true;
       addLog(`${player.name} は次のショップで半額券を使えます。`);
@@ -1433,7 +1462,8 @@ function triggerEvent() {
 function openShop(player) {
   state.phase = "shop";
   state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
-  state.pendingShopDice = Math.random() < 0.78 ? [makeSpecialDice("d12")] : [];
+  state.pendingShopDice = Math.random() < 0.86 ? [randomSpecialDice()] : [];
+  state.shopRerolled = false;
   els.shopPanel.classList.remove("hidden");
   addLog(`${player.name} はショップに入りました。`);
   renderAll();
@@ -1457,6 +1487,27 @@ function buySpecialDice(uidValue) {
   player.specialDice.push(die);
   state.pendingShopDice.splice(index, 1);
   addLog(`${player.name} は ${info.name} を ${info.price}G で購入しました。`);
+  renderAll();
+}
+
+function rerollShop() {
+  const player = currentPlayer();
+  if (!player || state.phase !== "shop") return;
+  if (!requirePlayerControl(player)) return;
+  if (state.shopRerolled) {
+    addLog("このショップではすでにリロール済みです。");
+    return;
+  }
+  const cost = 25;
+  if (player.money < cost) {
+    addLog(`${player.name} はリロール費用が足りません。`);
+    return;
+  }
+  player.money -= cost;
+  state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
+  state.pendingShopDice = Math.random() < 0.86 ? [randomSpecialDice()] : [];
+  state.shopRerolled = true;
+  addLog(`${player.name} は 25G でショップをリロールしました。`);
   renderAll();
 }
 
@@ -1827,7 +1878,7 @@ function finishBattle() {
   } else {
     winnerPlayer.money += 90;
     addRandomItems(winnerPlayer, 2, "green");
-    addSpecialDice(winnerPlayer, "d12", "戦闘報酬で手に入れました");
+    addSpecialDice(winnerPlayer, weightedChoice([["d12", 40], ["trick", 30], ["gold", 30]]), "戦闘報酬で手に入れました");
     battle.participants.forEach((fighter) => {
       if (fighter.playerId !== winner.playerId) {
         const player = state.players.find((p) => p.id === fighter.playerId);
@@ -2510,7 +2561,10 @@ function renderTurn() {
     player.specialDice.forEach((die) => {
       const info = SPECIAL_DICE[die.type];
       if (!info) return;
-      const button = actionButton(`${info.name} 残り${die.usesLeft}`, "secondary-button special-dice-button", () => rollMoveDice(die.uid), !canControlPlayer(player) || isAnimatingMove);
+      const button = actionButton(`${info.name} 残り${die.usesLeft}`, "secondary-button special-dice-button", () => {
+        if (info.choose) renderTrickDiceChoices(player, die);
+        else rollMoveDice(die.uid);
+      }, !canControlPlayer(player) || isAnimatingMove);
       button.innerHTML = `<img src="${info.image}" alt="" /> <span>${info.name}</span><small>残り${die.usesLeft}</small>`;
       els.actionArea.append(button);
     });
@@ -2559,6 +2613,18 @@ function renderTurn() {
   if (state.phase === "gameover") {
     els.turnTitle.textContent = "ゲーム終了";
   }
+}
+
+function renderTrickDiceChoices(player, die) {
+  if (!canControlPlayer(player) || isAnimatingMove) return;
+  const existing = els.actionArea.querySelector(".trick-dice-choices");
+  if (existing) existing.remove();
+  const row = document.createElement("div");
+  row.className = "trick-dice-choices";
+  for (let value = 1; value <= 6; value += 1) {
+    row.append(actionButton(String(value), "small-button", () => rollMoveDice(die.uid, value)));
+  }
+  els.actionArea.append(row);
 }
 
 function actionButton(label, className, handler, disabled = false) {
@@ -2914,6 +2980,7 @@ function renderShop() {
 
   if (state.phase === "shop") {
     els.shopTitle.textContent = "ショップ";
+    els.shopContent.append(actionButton(state.shopRerolled ? "リロール済み" : "25Gでリロール", "secondary-button", rerollShop, !canControlPlayer(player) || state.shopRerolled || player.money < 25));
     const grid = document.createElement("div");
     grid.className = "shop-grid";
     state.pendingShop.forEach((shopItem) => {

@@ -899,6 +899,26 @@ textarea {
   font-size: 10px;
 }
 
+.trick-dice-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(232, 255, 223, 0.72);
+  padding: 7px;
+}
+
+.trick-dice-choices .small-button {
+  min-width: 38px;
+  min-height: 38px;
+  border-color: #6ea96a;
+  background: #f7fff2;
+  color: #244c2d;
+  font-size: 15px;
+}
+
 .message-box {
   border: 1px solid var(--line);
   border-radius: 8px;
