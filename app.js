@@ -300,6 +300,16 @@ const randomSpaceWeights = [
   ["forge", 8],
 ];
 
+const HAPPENING_CHANCE = 0.16;
+const ITEM_GAIN_EFFECT_MS = 1450;
+const BATTLE_ACTION_EFFECT_MS = 1000;
+const happenings = {
+  minefield: { label: "地雷原", icon: "💥", className: "happening-minefield" },
+  clover: { label: "クローバー", icon: "🍀", className: "happening-clover" },
+  tax: { label: "脱税発覚", icon: "🚨", className: "happening-tax" },
+  sideJob: { label: "副業マスター山下", icon: "💼", className: "happening-sidejob" },
+};
+
 let state = newGameState();
 let selectedItem = null;
 let selectedSynthesis = [];
@@ -308,6 +318,7 @@ let touchDrag = null;
 let isAnimatingMove = false;
 let uiEffects = {
   space: null,
+  happening: null,
 };
 let battleTimerHandle = null;
 let battleTickHandle = null;
@@ -564,16 +575,17 @@ function queueItemGain(player, items) {
     at: Date.now(),
   });
   effects.itemGains = effects.itemGains.slice(-16);
-  window.setTimeout(renderBoard, 1800);
+  window.setTimeout(renderBoard, ITEM_GAIN_EFFECT_MS + 80);
 }
 
 function recentItemGainFor(player) {
   if (!player || !canControlPlayer(player)) return null;
   const now = Date.now();
   const effects = ensureEffects();
-  return [...effects.itemGains]
+  const gain = [...effects.itemGains]
     .reverse()
-    .find((gain) => gain.playerId === player.id && now - gain.at < 1800);
+    .find((entry) => entry.playerId === player.id && now - entry.at < ITEM_GAIN_EFFECT_MS);
+  return gain ? { ...gain, elapsed: now - gain.at } : null;
 }
 
 function showSpaceEffect(position, type) {
@@ -592,6 +604,27 @@ function showSpaceEffect(position, type) {
   }, 900);
 }
 
+function showHappeningEffect(player, key) {
+  const info = happenings[key];
+  if (!player || !info) return;
+  uiEffects.happening = {
+    id: uid(),
+    playerId: player.id,
+    key,
+    icon: info.icon,
+    label: info.label,
+    className: info.className,
+  };
+  renderBoard();
+  const effectId = uiEffects.happening.id;
+  window.setTimeout(() => {
+    if (uiEffects.happening?.id === effectId) {
+      uiEffects.happening = null;
+      renderBoard();
+    }
+  }, 1800);
+}
+
 function queueBattleAction(action) {
   const effects = ensureEffects();
   effects.battleActions.push({
@@ -600,18 +633,20 @@ function queueBattleAction(action) {
     ...action,
   });
   effects.battleActions = effects.battleActions.slice(-24);
-  window.setTimeout(renderBattle, 1300);
+  window.setTimeout(renderBattle, BATTLE_ACTION_EFFECT_MS + 80);
 }
 
 function recentBattleActionFor(playerId, role) {
   const now = Date.now();
   const effects = ensureEffects();
-  return [...effects.battleActions].reverse().find((action) => {
-    if (now - action.at > 1300) return false;
-    if (role === "actor") return action.actorId === playerId;
-    if (role === "target") return action.targetIds?.includes(playerId);
+  const action = [...effects.battleActions].reverse().find((entry) => {
+    if (now - entry.at > BATTLE_ACTION_EFFECT_MS) return false;
+    if (role === "actor" && entry.type === "damage") return false;
+    if (role === "actor") return entry.actorId === playerId;
+    if (role === "target") return entry.targetIds?.includes(playerId);
     return false;
   });
+  return action ? { ...action, elapsed: now - action.at } : null;
 }
 
 function normalizeGameState(gameState) {
@@ -1044,6 +1079,33 @@ function stepPlayerForward(player) {
   player.position = next;
 }
 
+function maybeTriggerHappening(player, spaceType) {
+  if (!["plus", "minus"].includes(spaceType)) return false;
+  if (Math.random() >= HAPPENING_CHANCE) return false;
+  const key = choice(Object.keys(happenings));
+  showHappeningEffect(player, key);
+
+  if (key === "minefield") {
+    const rate = choice([0.5, 0.25]);
+    const loss = Math.floor(player.money * rate);
+    player.money = Math.max(0, player.money - loss);
+    addLog(`ハプニング「地雷原」! ${player.name} は ${loss}G を失いました。`);
+  } else if (key === "clover") {
+    const gain = Math.floor(player.money * 0.5);
+    player.money += gain;
+    addLog(`ハプニング「クローバー」! ${player.name} の所持金が1.5倍になり、${gain}G 増えました。`);
+  } else if (key === "tax") {
+    const count = player.stash.length;
+    player.stash = [];
+    selectedItem = null;
+    addLog(`ハプニング「脱税発覚」! ${player.name} は手持ちアイテム ${count} 個をすべて失いました。`);
+  } else if (key === "sideJob") {
+    player.money += 200;
+    addLog(`ハプニング「副業マスター山下」! ${player.name} は 200G を得ました。`);
+  }
+  return true;
+}
+
 async function rollMoveDice() {
   const player = currentPlayer();
   if (!player || state.phase !== "turn") return;
@@ -1081,12 +1143,14 @@ function resolveSpace(player) {
     player.money += money;
     const items = addRandomItems(player, rand(2, 3), "white");
     addLog(`${player.name} は ${money}G と ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
+    maybeTriggerHappening(player, type);
     finishAction();
   } else if (type === "minus") {
     const loss = Math.min(player.money, rand(20, 60));
     player.money -= loss;
     player.nextBattlePenalty += 0.12;
     addLog(`${player.name} は ${loss}G を失い、次の戦闘で攻撃力が下がります。`);
+    maybeTriggerHappening(player, type);
     finishAction();
   } else if (type === "lucky") {
     const effect = choice(["item", "dash", "discount"]);
@@ -2057,8 +2121,15 @@ function renderBoard() {
     if (gain) {
       const popup = document.createElement("span");
       popup.className = "item-gain-pop";
+      popup.style.animationDelay = `-${Math.min(gain.elapsed, ITEM_GAIN_EFFECT_MS)}ms`;
       popup.textContent = gain.icons;
       token.append(popup);
+    }
+    if (uiEffects.happening?.playerId === player.id) {
+      const happening = document.createElement("span");
+      happening.className = `happening-pop ${uiEffects.happening.className}`;
+      happening.innerHTML = `<span>${escapeHtml(uiEffects.happening.icon)}</span><strong>${escapeHtml(uiEffects.happening.label)}</strong>`;
+      token.append(happening);
     }
     return token;
   };
@@ -2464,6 +2535,10 @@ function renderShop() {
   els.shopPanel.classList.toggle("hidden", !visible);
   els.shopContent.innerHTML = "";
   if (!player || !visible) return;
+  const moneyBadge = document.createElement("div");
+  moneyBadge.className = "shop-money";
+  moneyBadge.innerHTML = `<span>所持金</span><strong>${player.money}G</strong>`;
+  els.shopContent.append(moneyBadge);
 
   if (state.phase === "shop") {
     els.shopTitle.textContent = "ショップ";
@@ -2578,7 +2653,8 @@ function renderBattle() {
     const row = document.createElement("div");
     row.className = "fighter";
     const actorEffect = recentBattleActionFor(player.id, "actor");
-    const targetEffect = recentBattleActionFor(player.id, "target");
+    let targetEffect = recentBattleActionFor(player.id, "target");
+    if (actorEffect?.id && actorEffect.id === targetEffect?.id) targetEffect = null;
     if (actorEffect) row.classList.add(actorEffect.type === "heal" || actorEffect.type === "ready" ? "fighter-ready" : "fighter-acting");
     if (targetEffect) row.classList.add(targetEffect.type === "heal" ? "fighter-ready" : "fighter-hit");
     const hpMax = fighter.maxHp || 100;
@@ -2589,8 +2665,8 @@ function renderBattle() {
     row.innerHTML = `
       <div class="fighter-head"><span>${escapeHtml(player.name)} ${readyMark}</span><span>${Math.max(0, Math.round(fighter.hp))}/${hpMax} HP / 盾 ${fighter.shield}</span></div>
       <div class="hp-bar"><span class="hp-fill" style="--hp:${hpPercent}%"></span></div>
-      ${targetEffect ? `<div class="battle-pop damage-pop">${escapeHtml(targetEffect.label)}</div>` : ""}
-      ${actorEffect ? `<div class="battle-pop action-pop">${escapeHtml(actorEffect.label)}</div>` : ""}
+      ${targetEffect ? `<div class="battle-pop damage-pop" style="animation-delay:-${Math.min(targetEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(targetEffect.label)}</div>` : ""}
+      ${actorEffect ? `<div class="battle-pop action-pop" style="animation-delay:-${Math.min(actorEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(actorEffect.label)}</div>` : ""}
       <div class="battle-items">${renderBattleItems(player, fighter)}</div>
     `;
     els.battleArena.append(row);
