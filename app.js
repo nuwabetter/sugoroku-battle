@@ -448,7 +448,9 @@ function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
   const safeSize = clamp(Number(size) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   const board = ["start"];
   for (let index = 1; index < safeSize - 1; index += 1) {
-    const weights = index < 14 ? randomSpaceWeights.filter(([type]) => type !== "combat") : randomSpaceWeights;
+    const weights = index < 14
+      ? randomSpaceWeights.filter(([type]) => type !== "combat" && type !== "forge")
+      : randomSpaceWeights;
     board.push(weightedChoice(weights));
   }
   board.push("goal");
@@ -462,7 +464,7 @@ function createBoardBranches(board) {
   const branches = [];
   const used = new Set();
   for (let index = 0; index < count; index += 1) {
-    const startMin = Math.max(6, Math.floor(length * 0.18));
+    const startMin = Math.max(14, Math.floor(length * 0.18));
     const startMax = Math.max(startMin, length - 8);
     let from = rand(startMin, startMax);
     let guard = 0;
@@ -494,10 +496,33 @@ function ensureMinimumSpaces(board) {
   };
   Object.entries(minimums).forEach(([type, minimum]) => {
     while (countSpaces(board, type) < minimum) {
-      const index = type === "combat" ? rand(14, board.length - 2) : rand(1, board.length - 2);
+      const index = type === "combat" || type === "forge" ? rand(14, board.length - 2) : rand(1, board.length - 2);
       board[index] = type;
     }
   });
+}
+
+function sanitizeBoard(board) {
+  if (!Array.isArray(board)) return board;
+  for (let index = 1; index < Math.min(14, board.length - 1); index += 1) {
+    if (board[index] === "forge" || board[index] === "combat") {
+      board[index] = weightedChoice(randomSpaceWeights.filter(([type]) => type !== "combat" && type !== "forge"));
+    }
+  }
+  return board;
+}
+
+function sanitizeBranches(branches) {
+  if (!Array.isArray(branches)) return branches;
+  return branches
+    .filter((branch) => Number(branch.from) >= 14)
+    .map((branch) => ({
+      ...branch,
+      from: Number(branch.from),
+      spaces: Array.isArray(branch.spaces)
+        ? branch.spaces.map((type) => (type === "combat" ? "plus" : type))
+        : [],
+    }));
 }
 
 function countSpaces(board, type) {
@@ -509,12 +534,14 @@ function activeBoard() {
     state.board = createBoardPattern(state.boardSize || DEFAULT_BOARD_SIZE);
     state.branches = createBoardBranches(state.board);
   }
+  sanitizeBoard(state.board);
   return state.board;
 }
 
 function activeBranches() {
   activeBoard();
   if (!Array.isArray(state.branches)) state.branches = createBoardBranches(state.board);
+  state.branches = sanitizeBranches(state.branches);
   return state.branches;
 }
 
@@ -584,9 +611,11 @@ function normalizeGameState(gameState) {
   if (!Array.isArray(gameState.board) || gameState.board.length !== gameState.boardSize) {
     gameState.board = createBoardPattern(gameState.boardSize);
   }
+  sanitizeBoard(gameState.board);
   if (!Array.isArray(gameState.branches)) {
     gameState.branches = createBoardBranches(gameState.board);
   }
+  gameState.branches = sanitizeBranches(gameState.branches);
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -598,9 +627,32 @@ function normalizeGameState(gameState) {
     gameState.players.forEach((player, index) => {
       player.position = clamp(Number(player.position) || 0, 0, gameState.board.length - 1);
       player.avatar = player.avatar || gameState.avatars[index] || avatarOptions[index] || "😀";
+      normalizeBackpack(player);
     });
   }
   return gameState;
+}
+
+function normalizeBackpack(player) {
+  if (!player) return;
+  player.backpackW = clamp(Number(player.backpackW) || 4, 4, 6);
+  player.backpackH = clamp(Number(player.backpackH) || 4, 4, 6);
+  if (!Array.isArray(player.backpack)) player.backpack = [];
+  if (!Array.isArray(player.stash)) player.stash = [];
+  player.backpack = player.backpack
+    .map((entry) => {
+      const item = itemById(entry.itemId);
+      if (!item) return null;
+      return {
+        ...entry,
+        x: clamp(Number(entry.x) || 0, 0, player.backpackW - 1),
+        y: clamp(Number(entry.y) || 0, 0, player.backpackH - 1),
+        w: item.w,
+        h: item.h,
+      };
+    })
+    .filter(Boolean)
+    .filter((entry) => entry.x + entry.w <= player.backpackW && entry.y + entry.h <= player.backpackH);
 }
 
 function itemById(id) {
@@ -1513,7 +1565,11 @@ function renderPlacementPreview() {
 }
 
 function cellFromPoint(clientX, clientY) {
+  const dragElement = touchDrag?.element;
+  const previousPointerEvents = dragElement?.style.pointerEvents;
+  if (dragElement) dragElement.style.pointerEvents = "none";
   const target = document.elementFromPoint(clientX, clientY);
+  if (dragElement) dragElement.style.pointerEvents = previousPointerEvents || "";
   return target?.closest?.(".grid-cell") || null;
 }
 
@@ -1605,6 +1661,7 @@ function renderAll() {
   renderOnline();
   if (state.phase === "setup") renderSetup();
   renderSetupVisibility();
+  state.players.forEach(normalizeBackpack);
   renderBoard();
   renderPlayers();
   renderTurn();
@@ -2094,6 +2151,7 @@ function renderBackpack() {
     els.editLock.textContent = online.enabled ? "担当プレイヤーを選ぶと自分のバックパックだけ確認できます。" : "";
     return;
   }
+  normalizeBackpack(player);
 
   const editable = canEditBackpack(player);
   els.editLock.textContent = editable
@@ -2116,7 +2174,7 @@ function renderBackpack() {
     card.addEventListener("pointerdown", (event) => {
       if (!editable || event.pointerType === "mouse") return;
       selectedItem = stashItem.uid;
-      touchDrag = { uid: stashItem.uid, pointerId: event.pointerId };
+      touchDrag = { uid: stashItem.uid, pointerId: event.pointerId, element: card };
       card.setPointerCapture?.(event.pointerId);
       card.classList.add("touch-dragging");
       showItemDetail(stashItem, item);
@@ -2142,6 +2200,31 @@ function renderBackpack() {
       touchDrag = null;
       clearPlacementPreview();
     });
+    card.addEventListener("touchstart", (event) => {
+      if (!editable || touchDrag) return;
+      selectedItem = stashItem.uid;
+      touchDrag = { uid: stashItem.uid, touch: true, element: card };
+      card.classList.add("touch-dragging");
+      showItemDetail(stashItem, item);
+      event.preventDefault();
+    }, { passive: false });
+    card.addEventListener("touchmove", (event) => {
+      if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const cell = cellFromPoint(touch.clientX, touch.clientY);
+      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      event.preventDefault();
+    }, { passive: false });
+    card.addEventListener("touchend", (event) => {
+      if (!touchDrag || touchDrag.uid !== stashItem.uid) return;
+      const touch = event.changedTouches[0];
+      const cell = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
+      card.classList.remove("touch-dragging");
+      touchDrag = null;
+      placeFromCell(cell);
+      event.preventDefault();
+    }, { passive: false });
     card.classList.toggle("selected", selectedItem === stashItem.uid);
     card.addEventListener("click", () => {
       selectedItem = selectedItem === stashItem.uid ? null : stashItem.uid;
@@ -2154,6 +2237,7 @@ function renderBackpack() {
   }
 
   els.backpackGrid.style.gridTemplateColumns = `repeat(${player.backpackW}, minmax(40px, 1fr))`;
+  els.backpackGrid.style.gridTemplateRows = `repeat(${player.backpackH}, minmax(40px, 1fr))`;
   els.backpackGrid.innerHTML = "";
   for (let y = 0; y < player.backpackH; y += 1) {
     for (let x = 0; x < player.backpackW; x += 1) {
@@ -2163,6 +2247,8 @@ function renderBackpack() {
       cell.dataset.x = String(x);
       cell.dataset.y = String(y);
       cell.dataset.cell = `${x},${y}`;
+      cell.style.gridColumn = `${x + 1}`;
+      cell.style.gridRow = `${y + 1}`;
       cell.setAttribute("aria-label", `slot ${x + 1}-${y + 1}`);
       cell.addEventListener("dragover", (event) => {
         if (!editable) return;
@@ -2193,11 +2279,14 @@ function renderBackpack() {
   }
   player.backpack.forEach((entry) => {
     const item = itemById(entry.itemId);
+    if (!item) return;
+    const width = item.w;
+    const height = item.h;
     const tile = document.createElement("button");
     tile.type = "button";
     tile.className = `placed-item-tile rare-${item.rarity}`;
-    tile.style.gridColumn = `${entry.x + 1} / span ${entry.w}`;
-    tile.style.gridRow = `${entry.y + 1} / span ${entry.h}`;
+    tile.style.gridColumn = `${entry.x + 1} / span ${width}`;
+    tile.style.gridRow = `${entry.y + 1} / span ${height}`;
     tile.innerHTML = `
       <span class="placed-item-icon">${itemIcons[item.id] || "🎁"}</span>
       <span class="placed-item-name">${escapeHtml(item.name)}</span>
