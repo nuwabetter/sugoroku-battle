@@ -1283,6 +1283,16 @@ textarea {
   line-height: 1.35;
 }
 
+.timing-text {
+  color: #5d4c88;
+  font-weight: 900;
+}
+
+.dark-shop-item {
+  border-color: #8b6cc8;
+  background: linear-gradient(135deg, #fff, #f5efff);
+}
+
 .dice-shop-item img {
   width: 58px;
   height: 58px;
@@ -1450,6 +1460,24 @@ textarea {
   inset: 0 auto 0 0;
   width: var(--hp);
   background: linear-gradient(90deg, #31a37c, #d7a12b, #d4453f);
+  transition: width 0.25s ease;
+}
+
+.shield-bar {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e7edf4;
+  margin-top: 5px;
+}
+
+.shield-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--shield);
+  background: linear-gradient(90deg, #8bd9ff, #3278c6);
+  box-shadow: inset 0 -2px 0 rgba(33, 25, 7, 0.18);
   transition: width 0.25s ease;
 }
 

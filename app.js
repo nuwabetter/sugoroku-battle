@@ -40,7 +40,7 @@ const spaceTypes = {
   plus: { label: "プラス", color: "#3ca370" },
   minus: { label: "マイナス", color: "#d4453f" },
   lucky: { label: "ラッキー", color: "#d7a12b" },
-  shop: { label: "ショップ", color: "#3278c6" },
+  shop: { label: "闇商人", color: "#49306b" },
   forge: { label: "鍛造", color: "#8758b8" },
   combat: { label: "戦闘", color: "#1f2937" },
   goal: { label: "人生終了マス", color: "linear-gradient(135deg, #ff8ab3, #ffa7a0, #b7f7c4, #8bd9ff, #c7a8ff)" },
@@ -812,6 +812,8 @@ function normalizeGameState(gameState) {
       if (player.branch && !gameState.branches.some((branch) => branch.id === player.branch.id)) player.branch = null;
       if (player.branch) player.branch.index = clamp(Number(player.branch.index) || 0, 0, 12);
       normalizeSpecialDice(player);
+      if (!Array.isArray(player.personalShop)) player.personalShop = [];
+      player.personalShopRerolled = Boolean(player.personalShopRerolled);
       normalizeBackpack(player);
     });
   }
@@ -892,6 +894,22 @@ function randomItem(minimum = "white") {
   return makeItem(choice(pool).id);
 }
 
+function randomItemUpTo(maximum = "blue", minimum = "white") {
+  const minIndex = rarityOrder.indexOf(minimum);
+  const maxIndex = rarityOrder.indexOf(maximum);
+  const allowed = rarityOrder.slice(minIndex, maxIndex + 1);
+  const entries = allowed.map((rarity) => [rarity, rarityWeights[rarity]]);
+  const rarity = weightedChoice(entries);
+  const pool = itemCatalog.filter((item) => item.rarity === rarity);
+  return makeItem(choice(pool).id);
+}
+
+function randomRareMerchantItem() {
+  const rarity = weightedChoice([["purple", 62], ["gold", 38]]);
+  const pool = itemCatalog.filter((item) => item.rarity === rarity);
+  return makeItem(choice(pool).id);
+}
+
 function addRandomItems(player, count, minimum = "white") {
   const items = Array.from({ length: count }, () => randomItem(minimum));
   player.stash.push(...items);
@@ -922,6 +940,12 @@ function addSpecialDice(player, type = "d12", reason = "") {
   return die;
 }
 
+function refreshPersonalShop(player) {
+  if (!player) return;
+  player.personalShop = [randomItemUpTo("blue"), randomItemUpTo("blue")];
+  player.personalShopRerolled = false;
+}
+
 function createPlayers() {
   return Array.from({ length: state.setupCount }, (_, index) => ({
     id: index + 1,
@@ -929,11 +953,13 @@ function createPlayers() {
     avatar: state.avatars[index] || avatarOptions[index],
     color: playerColors[index],
     position: 0,
-    money: 120,
+    money: 100,
     turnCount: 0,
     orderRoll: null,
     rollBonus: 0,
     specialDice: [],
+    personalShop: [],
+    personalShopRerolled: false,
     shopDiscount: false,
     nextBattlePenalty: 0,
     backpackW: 4,
@@ -1003,7 +1029,7 @@ function phaseLabel() {
     setup: "準備中",
     order: "順番決定",
     turn: "行動ターン",
-    shop: "ショップ",
+    shop: "闇商人",
     forge: "鍛造",
     combatChoice: "戦闘相手選択",
     battlePrep: "戦闘準備",
@@ -1218,6 +1244,7 @@ function rollOrderDice() {
 function beginTurn() {
   const player = currentPlayer();
   if (!player) return;
+  refreshPersonalShop(player);
   purgeOverflow(player);
   const income = placedItems(player).reduce((sum, placed) => {
     const item = itemById(placed.itemId);
@@ -1357,20 +1384,34 @@ function resolveSpace(player) {
   addLog(`${player.name} は「${name}」に止まりました。`);
 
   if (type === "plus") {
-    const money = rand(25, 70);
-    player.money += money;
-    const items = addRandomItems(player, rand(2, 3), "white");
-    addLog(`${player.name} は ${money}G と ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
-    maybeTriggerHappening(player, type);
+    const happened = maybeTriggerHappening(player, type);
+    if (!happened) {
+      const effect = choice(["money", "item"]);
+      if (effect === "money") {
+        const money = rand(25, 70);
+        player.money += money;
+        addLog(`${player.name} は ${money}G を得ました。`);
+      } else {
+        const items = addRandomItems(player, rand(1, 2), "white");
+        addLog(`${player.name} は ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
+      }
+    }
     player.position = landedPosition;
     player.branch = landedBranch;
     finishAction();
   } else if (type === "minus") {
-    const loss = Math.min(player.money, rand(20, 60));
-    player.money -= loss;
-    player.nextBattlePenalty += 0.12;
-    addLog(`${player.name} は ${loss}G を失い、次の戦闘で攻撃力が下がります。`);
-    maybeTriggerHappening(player, type);
+    const happened = maybeTriggerHappening(player, type);
+    if (!happened) {
+      const effect = choice(["money", "penalty"]);
+      if (effect === "money") {
+        const loss = Math.min(player.money, rand(20, 60));
+        player.money -= loss;
+        addLog(`${player.name} は ${loss}G を失いました。`);
+      } else {
+        player.nextBattlePenalty += 0.12;
+        addLog(`${player.name} は次の戦闘で攻撃力が下がります。`);
+      }
+    }
     player.position = landedPosition;
     player.branch = landedBranch;
     finishAction();
@@ -1461,11 +1502,11 @@ function triggerEvent() {
 
 function openShop(player) {
   state.phase = "shop";
-  state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
-  state.pendingShopDice = Math.random() < 0.86 ? [randomSpecialDice()] : [];
+  state.pendingShop = [randomRareMerchantItem(), randomRareMerchantItem()];
+  state.pendingShopDice = [randomSpecialDice()];
   state.shopRerolled = false;
   els.shopPanel.classList.remove("hidden");
-  addLog(`${player.name} はショップに入りました。`);
+  addLog(`${player.name} は闇商人マスに入りました。`);
   renderAll();
 }
 
@@ -1478,24 +1519,25 @@ function buySpecialDice(uidValue) {
   const die = state.pendingShopDice[index];
   const info = SPECIAL_DICE[die.type];
   if (!info) return;
-  if (player.money < info.price) {
+  const price = Math.ceil(info.price * 1.75);
+  if (player.money < price) {
     addLog(`${player.name} は ${info.name} を買うお金が足りません。`);
     return;
   }
-  player.money -= info.price;
+  player.money -= price;
   normalizeSpecialDice(player);
   player.specialDice.push(die);
   state.pendingShopDice.splice(index, 1);
-  addLog(`${player.name} は ${info.name} を ${info.price}G で購入しました。`);
+  addLog(`${player.name} は ${info.name} を ${price}G で購入しました。`);
   renderAll();
 }
 
 function rerollShop() {
-  const player = currentPlayer();
-  if (!player || state.phase !== "shop") return;
-  if (!requirePlayerControl(player)) return;
-  if (state.shopRerolled) {
-    addLog("このショップではすでにリロール済みです。");
+  const player = personalShopPlayer();
+  if (!player) return;
+  if (!canUsePersonalShop(player)) return;
+  if (player.personalShopRerolled) {
+    addLog("このショップはすでにリロール済みです。");
     return;
   }
   const cost = 25;
@@ -1504,10 +1546,45 @@ function rerollShop() {
     return;
   }
   player.money -= cost;
-  state.pendingShop = [randomItem("white"), randomItem("green"), randomItem("blue")];
-  state.pendingShopDice = Math.random() < 0.86 ? [randomSpecialDice()] : [];
-  state.shopRerolled = true;
-  addLog(`${player.name} は 25G でショップをリロールしました。`);
+  refreshPersonalShop(player);
+  player.personalShopRerolled = true;
+  addLog(`${player.name} は 25G で常設ショップをリロールしました。`);
+  renderAll();
+}
+
+function personalShopPlayer() {
+  if (!state.players.length) return null;
+  if (online.enabled && online.playerId) {
+    return state.players.find((player) => player.id === online.playerId) || null;
+  }
+  return selectedEditorPlayer() || currentPlayer();
+}
+
+function canUsePersonalShop(player) {
+  if (!player) return false;
+  if (!online.enabled) return true;
+  return canControlPlayer(player);
+}
+
+function buyPersonalShopItem(uidValue) {
+  const player = personalShopPlayer();
+  if (!player || !canUsePersonalShop(player)) return;
+  if (!Array.isArray(player.personalShop) || !player.personalShop.length) refreshPersonalShop(player);
+  const index = player.personalShop.findIndex((item) => item.uid === uidValue);
+  if (index < 0) return;
+  const item = player.personalShop[index];
+  const catalog = itemById(item.itemId);
+  const price = Math.floor(catalog.price * (player.shopDiscount ? 0.5 : 1));
+  if (player.money < price) {
+    addLog(`${player.name} は ${catalog.name} を買うお金が足りません。`);
+    return;
+  }
+  player.money -= price;
+  player.shopDiscount = false;
+  player.stash.push(item);
+  queueItemGain(player, [item]);
+  player.personalShop.splice(index, 1);
+  addLog(`${player.name} は常設ショップで ${catalog.name} を ${price}G で購入しました。`);
   renderAll();
 }
 
@@ -1518,7 +1595,8 @@ function buyShopItem(uidValue) {
   if (!player || index < 0) return;
   const item = state.pendingShop[index];
   const catalog = itemById(item.itemId);
-  const price = Math.floor(catalog.price * (player.shopDiscount ? 0.5 : 1));
+  const darkRate = state.phase === "shop" ? 1.75 : 1;
+  const price = Math.floor(catalog.price * darkRate * (player.shopDiscount ? 0.5 : 1));
   if (player.money < price) {
     addLog(`${player.name} は ${catalog.name} を買うお金が足りません。`);
     return;
@@ -2140,6 +2218,10 @@ function renderAll() {
   if (state.phase === "setup") renderSetup();
   renderSetupVisibility();
   state.players.forEach(normalizeSpecialDice);
+  state.players.forEach((player) => {
+    if (!Array.isArray(player.personalShop)) player.personalShop = [];
+    player.personalShopRerolled = Boolean(player.personalShopRerolled);
+  });
   state.players.forEach(normalizeBackpack);
   renderBoard();
   renderPlayers();
@@ -2584,7 +2666,7 @@ function renderTurn() {
   }
 
   if (state.phase === "shop" || state.phase === "forge") {
-    els.turnTitle.textContent = `${player.name} の${state.phase === "shop" ? "ショップ" : "鍛造"}`;
+    els.turnTitle.textContent = `${player.name} の${state.phase === "shop" ? "闇商人" : "鍛造"}`;
     els.actionArea.append(actionButton("行動を終了", "secondary-button", closeShopOrForge, !canControlPlayer(player)));
     return;
   }
@@ -2939,7 +3021,7 @@ function renderItemCard(stashItem, item) {
   card.innerHTML = `
     <span class="rarity-dot"></span>
     <span class="item-name"><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</span>
-    <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item))}</span>
+    <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item))}<br>${escapeHtml(itemTimingText(item))}</span>
   `;
   card.addEventListener("mouseenter", () => showItemDetail(stashItem, item));
   card.addEventListener("focus", () => showItemDetail(stashItem, item));
@@ -2955,8 +3037,21 @@ function shortEffect(item) {
   return "特殊";
 }
 
+function itemTimingText(item) {
+  const parts = [];
+  if (item.damage || item.poison) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに攻撃`);
+  if (item.heal) parts.push(`戦闘中 ${((item.interval || 3500) / 1000).toFixed(1)}秒ごとに回復`);
+  if (item.income) parts.push("自分の行動ターン開始時に収入");
+  if (item.shield) parts.push("戦闘開始時に盾を獲得");
+  if (item.boost) parts.push("配置中、隣接攻撃アイテムを常時強化");
+  if (item.boostAll) parts.push("配置中、攻撃アイテム全体を常時強化");
+  if (item.weaken) parts.push("戦闘中、相手全体の攻撃力を常時低下");
+  if (item.healOnHit) parts.push("攻撃命中時に回復");
+  return parts.join(" / ") || "配置中に効果発動";
+}
+
 function showItemDetail(stashItem, item) {
-  els.itemDetail.innerHTML = `<strong>${itemIcons[item.id] || "🎁"} ${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
+  els.itemDetail.innerHTML = `<strong>${itemIcons[item.id] || "🎁"} ${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span><br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
 }
 
 function renderSelectedDetail(player) {
@@ -2967,9 +3062,18 @@ function renderSelectedDetail(player) {
   showItemDetail(item, itemById(item.itemId));
 }
 
+function shopCardHtml(item, extra = "") {
+  return `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span>${extra}</p>`;
+}
+
 function renderShop() {
-  const player = currentPlayer();
-  const visible = ["shop", "forge"].includes(state.phase) && (!online.enabled || canControlPlayer(player));
+  const forcedPanel = ["shop", "forge"].includes(state.phase) && (!online.enabled || canControlPlayer(currentPlayer()));
+  const mode = forcedPanel ? state.phase : "personal";
+  const player = forcedPanel ? currentPlayer() : personalShopPlayer();
+  const visible =
+    Boolean(player) &&
+    !["setup", "order", "gameover"].includes(state.phase) &&
+    (forcedPanel || canUsePersonalShop(player));
   els.shopPanel.classList.toggle("hidden", !visible);
   els.shopContent.innerHTML = "";
   if (!player || !visible) return;
@@ -2978,40 +3082,38 @@ function renderShop() {
   moneyBadge.innerHTML = `<span>所持金</span><strong>${player.money}G</strong>`;
   els.shopContent.append(moneyBadge);
 
-  if (state.phase === "shop") {
-    els.shopTitle.textContent = "ショップ";
-    els.shopContent.append(actionButton(state.shopRerolled ? "リロール済み" : "25Gでリロール", "secondary-button", rerollShop, !canControlPlayer(player) || state.shopRerolled || player.money < 25));
+  if (mode === "shop") {
+    els.shopTitle.textContent = "闇商人";
     const grid = document.createElement("div");
     grid.className = "shop-grid";
     state.pendingShop.forEach((shopItem) => {
       const item = itemById(shopItem.itemId);
-      const price = Math.floor(item.price * (player.shopDiscount ? 0.5 : 1));
+      const price = Math.floor(item.price * 1.75 * (player.shopDiscount ? 0.5 : 1));
       const card = document.createElement("div");
-      card.className = "shop-item";
-      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}</p>`;
-      card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyShopItem(shopItem.uid)));
+      card.className = "shop-item dark-shop-item";
+      card.innerHTML = shopCardHtml(item, `<br>闇価格 ${price}G`);
+      card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyShopItem(shopItem.uid), !canControlPlayer(player)));
       grid.append(card);
     });
     els.shopContent.append(grid);
-    if (Array.isArray(state.pendingShopDice) && state.pendingShopDice.length) {
-      const diceTitle = document.createElement("h3");
-      diceTitle.className = "shop-subtitle";
-      diceTitle.textContent = "特殊サイコロ";
-      const diceGrid = document.createElement("div");
-      diceGrid.className = "shop-grid dice-shop-grid";
-      state.pendingShopDice.forEach((die) => {
-        const info = SPECIAL_DICE[die.type];
-        if (!info) return;
-        const card = document.createElement("div");
-        card.className = "shop-item dice-shop-item";
-        card.innerHTML = `<img src="${info.image}" alt="" /><h3>${info.name}</h3><p>1〜${info.sides} / ${info.uses}回使用<br>価格 ${info.price}G</p>`;
-        card.append(actionButton(`${info.price}Gで購入`, "secondary-button", () => buySpecialDice(die.uid)));
-        diceGrid.append(card);
-      });
-      els.shopContent.append(diceTitle, diceGrid);
-    }
+    const diceTitle = document.createElement("h3");
+    diceTitle.className = "shop-subtitle";
+    diceTitle.textContent = "特殊サイコロ";
+    const diceGrid = document.createElement("div");
+    diceGrid.className = "shop-grid dice-shop-grid";
+    state.pendingShopDice.forEach((die) => {
+      const info = SPECIAL_DICE[die.type];
+      if (!info) return;
+      const price = Math.ceil(info.price * 1.75);
+      const card = document.createElement("div");
+      card.className = "shop-item dice-shop-item";
+      card.innerHTML = `<img src="${info.image}" alt="" /><h3>${info.name}</h3><p>1〜${info.sides} / ${info.uses}回使用<br>闇価格 ${price}G</p>`;
+      card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buySpecialDice(die.uid), !canControlPlayer(player)));
+      diceGrid.append(card);
+    });
+    els.shopContent.append(diceTitle, diceGrid);
     const expansionCost = 200 + Math.max(0, player.backpackW + player.backpackH - 8) * 100;
-    els.shopContent.append(actionButton(`バックパック拡張 ${expansionCost}G`, "secondary-button", buyBackpackExpansion));
+    els.shopContent.append(actionButton(`バックパック拡張 ${expansionCost}G`, "secondary-button", buyBackpackExpansion, !canControlPlayer(player)));
     const sellGrid = document.createElement("div");
     sellGrid.className = "shop-grid sell-grid";
     player.stash.forEach((stashItem) => {
@@ -3020,7 +3122,7 @@ function renderShop() {
       card.className = "shop-item";
       const sell = item.sell + (stashItem.level - 1) * 15;
       card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / 売却 ${sell}G</p>`;
-      card.append(actionButton("売却", "secondary-button", () => sellStashItem(stashItem.uid)));
+      card.append(actionButton("売却", "secondary-button", () => sellStashItem(stashItem.uid), !canControlPlayer(player)));
       sellGrid.append(card);
     });
     if (player.stash.length) {
@@ -3029,7 +3131,7 @@ function renderShop() {
       heading.textContent = "手持ち売却";
       els.shopContent.append(heading, sellGrid);
     }
-  } else if (state.phase === "forge") {
+  } else if (mode === "forge") {
     els.shopTitle.textContent = "鍛造";
     const synthGrid = document.createElement("div");
     synthGrid.className = "shop-grid synth-grid";
@@ -3039,8 +3141,8 @@ function renderShop() {
       const item = itemById(stashItem.itemId);
       const card = document.createElement("div");
       card.className = `shop-item synth-item ${selectedSynthesis.includes(stashItem.uid) ? "selected" : ""}`;
-      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</h3><p>${candidate.source} / ${rarityNames[item.rarity]} / ${item.w}×${item.h}</p>`;
-      card.append(actionButton(selectedSynthesis.includes(stashItem.uid) ? "選択中" : "合成に選ぶ", "secondary-button", () => toggleSynthesisItem(stashItem.uid)));
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</h3><p>${candidate.source} / ${rarityNames[item.rarity]} / ${item.w}×${item.h}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span></p>`;
+      card.append(actionButton(selectedSynthesis.includes(stashItem.uid) ? "選択中" : "合成に選ぶ", "secondary-button", () => toggleSynthesisItem(stashItem.uid), !canControlPlayer(player)));
       synthGrid.append(card);
     });
     if (candidates.length) {
@@ -3055,12 +3157,28 @@ function renderShop() {
       const item = itemById(entry.itemId);
       const card = document.createElement("div");
       card.className = "shop-item";
-      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G</p>`;
-      card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid)));
+      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span></p>`;
+      card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid), !canControlPlayer(player)));
       grid.append(card);
     });
     els.shopContent.append(grid);
-    els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2));
+    els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2 || !canControlPlayer(player)));
+  } else {
+    els.shopTitle.textContent = "ショップ";
+    if (!Array.isArray(player.personalShop) || !player.personalShop.length) refreshPersonalShop(player);
+    els.shopContent.append(actionButton(player.personalShopRerolled ? "リロール済み" : "25Gでリロール", "secondary-button", rerollShop, player.personalShopRerolled || player.money < 25 || !canUsePersonalShop(player)));
+    const grid = document.createElement("div");
+    grid.className = "shop-grid";
+    player.personalShop.forEach((shopItem) => {
+      const item = itemById(shopItem.itemId);
+      const price = Math.floor(item.price * (player.shopDiscount ? 0.5 : 1));
+      const card = document.createElement("div");
+      card.className = "shop-item";
+      card.innerHTML = shopCardHtml(item, `<br>価格 ${price}G`);
+      card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyPersonalShopItem(shopItem.uid), !canUsePersonalShop(player)));
+      grid.append(card);
+    });
+    els.shopContent.append(grid);
   }
 }
 
@@ -3115,12 +3233,14 @@ function renderBattle() {
     if (targetEffect) row.classList.add(targetEffect.type === "heal" ? "fighter-ready" : "fighter-hit");
     const hpMax = fighter.maxHp || 100;
     const hpPercent = clamp((Math.max(0, fighter.hp) / hpMax) * 100, 0, 100);
+    const shieldPercent = clamp((Math.max(0, fighter.shield) / Math.max(1, hpMax)) * 100, 0, 100);
     const readyMark = state.phase === "battlePrep"
       ? `<span class="ready-mark ${battle.ready?.[player.id] ? "ready" : ""}">${battle.ready?.[player.id] ? "READY" : "WAIT"}</span>`
       : "";
     row.innerHTML = `
       <div class="fighter-head"><span>${escapeHtml(player.name)} ${readyMark}</span><span>${Math.max(0, Math.round(fighter.hp))}/${hpMax} HP / 盾 ${fighter.shield}</span></div>
       <div class="hp-bar"><span class="hp-fill" style="--hp:${hpPercent}%"></span></div>
+      <div class="shield-bar"><span class="shield-fill" style="--shield:${shieldPercent}%"></span></div>
       ${targetEffect ? `<div class="battle-pop damage-pop" style="animation-delay:-${Math.min(targetEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(targetEffect.label)}</div>` : ""}
       ${actorEffect ? `<div class="battle-pop action-pop" style="animation-delay:-${Math.min(actorEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(actorEffect.label)}</div>` : ""}
       <div class="battle-items">${renderBattleItems(player, fighter)}</div>
