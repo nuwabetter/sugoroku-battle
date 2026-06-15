@@ -37,11 +37,11 @@ const rarityWeights = {
 
 const spaceTypes = {
   start: { label: "START", color: "#5f746c" },
-  plus: { label: "プラス", color: "#3ca370" },
-  minus: { label: "マイナス", color: "#d4453f" },
+  plus: { label: "低コルチゾールマス", color: "#3ca370" },
+  minus: { label: "鬱病マス", color: "#d4453f" },
   lucky: { label: "ラッキー", color: "#d7a12b" },
-  shop: { label: "闇商人", color: "#49306b" },
-  sales: { label: "営業", color: "#ef8f35" },
+  shop: { label: "闇商人", color: "#3278c6" },
+  sales: { label: "営業", color: "#f08ac3" },
   forge: { label: "鍛造", color: "#8758b8" },
   combat: { label: "戦闘", color: "#1f2937" },
   goal: { label: "人生終了マス", color: "linear-gradient(135deg, #ff8ab3, #ffa7a0, #b7f7c4, #8bd9ff, #c7a8ff)" },
@@ -393,10 +393,10 @@ const boardPattern = [
 ];
 
 const randomSpaceWeights = [
-  ["plus", 42],
+  ["plus", 36],
   ["minus", 15],
   ["shop", 13],
-  ["sales", 10],
+  ["sales", 16],
   ["lucky", 9],
   ["combat", 9],
   ["forge", 12],
@@ -443,10 +443,12 @@ const happenings = {
 let state = newGameState();
 let selectedItem = null;
 let selectedSynthesis = [];
+let forgeMode = "upgrade";
 let placementPreview = null;
 let touchDrag = null;
 let dragSource = null;
 let lastBackpackTap = { uid: null, at: 0 };
+let suppressPlacedClick = { uid: null, until: 0 };
 let displayedBattleActionIds = new Set();
 let isAnimatingMove = false;
 let uiEffects = {
@@ -475,6 +477,7 @@ let online = {
   auth: null,
   db: null,
   roomRef: null,
+  seats: {},
   unsubscribe: null,
 };
 localStorage.setItem("sugoroku-client-id", online.clientId);
@@ -487,6 +490,7 @@ const els = {
   createRoomButton: document.getElementById("createRoomButton"),
   joinRoomButton: document.getElementById("joinRoomButton"),
   leaveRoomButton: document.getElementById("leaveRoomButton"),
+  deleteAllRoomsButton: document.getElementById("deleteAllRoomsButton"),
   seatSelect: document.getElementById("seatSelect"),
   onlineHelp: document.getElementById("onlineHelp"),
   setupPanel: document.getElementById("setupPanel"),
@@ -651,6 +655,7 @@ function ensureMinimumSpaces(board) {
   const minimums = {
     plus: Math.ceil(board.length * 0.26),
     shop: Math.max(3, Math.floor(board.length / 13)),
+    sales: Math.max(3, Math.floor(board.length / 12)),
     lucky: Math.max(2, Math.floor(board.length / 24)),
     combat: Math.max(2, Math.floor(board.length / 24)),
     forge: Math.max(2, Math.floor(board.length / 18)),
@@ -817,6 +822,19 @@ function normalizeGameState(gameState) {
   gameState.shopRerolled = Boolean(gameState.shopRerolled);
   if (!Array.isArray(gameState.salesOptions)) gameState.salesOptions = [];
   if (!gameState.minigame || typeof gameState.minigame !== "object") gameState.minigame = null;
+  if (gameState.minigame) {
+    if (!Array.isArray(gameState.minigame.playerIds)) {
+      gameState.minigame.playerIds = Array.isArray(gameState.players)
+        ? gameState.players.filter((player) => !player.defeated).map((player) => player.id)
+        : [];
+    }
+    if (!gameState.minigame.results || typeof gameState.minigame.results !== "object") {
+      gameState.minigame.results = {};
+      if (gameState.minigame.playerId && gameState.minigame.result) {
+        gameState.minigame.results[gameState.minigame.playerId] = gameState.minigame.result;
+      }
+    }
+  }
   if (!gameState.pendingBranchChoice || typeof gameState.pendingBranchChoice !== "object") gameState.pendingBranchChoice = null;
   gameState.eventCount = Number(gameState.eventCount) || 0;
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
@@ -1074,6 +1092,11 @@ function canControlSetup() {
   return !online.enabled || online.isHost;
 }
 
+function canEditSetupPlayer(index) {
+  if (canControlSetup()) return true;
+  return online.enabled && online.playerId === index + 1;
+}
+
 function canControlPlayer(player) {
   if (!online.enabled) return true;
   return Boolean(player && online.playerId === player.id);
@@ -1132,15 +1155,25 @@ function bindEvents() {
   els.nameFields.addEventListener("input", (event) => {
     const input = event.target.closest("input[data-index]");
     if (!input) return;
-    if (!requireSetupControl()) return;
-    state.names[Number(input.dataset.index)] = input.value;
+    const index = Number(input.dataset.index);
+    if (!canEditSetupPlayer(index)) {
+      localNotice("自分の担当プレイヤー名だけ変更できます。");
+      renderSetup();
+      return;
+    }
+    state.names[index] = input.value;
     markChanged();
   });
   els.nameFields.addEventListener("change", (event) => {
     const select = event.target.closest("select[data-avatar-index]");
     if (!select) return;
-    if (!requireSetupControl()) return;
-    state.avatars[Number(select.dataset.avatarIndex)] = select.value;
+    const index = Number(select.dataset.avatarIndex);
+    if (!canEditSetupPlayer(index)) {
+      localNotice("自分の担当アバターだけ変更できます。");
+      renderSetup();
+      return;
+    }
+    state.avatars[index] = select.value;
     markChanged();
     renderAll();
   });
@@ -1192,6 +1225,7 @@ function bindEvents() {
   els.createRoomButton.addEventListener("click", createOnlineRoom);
   els.joinRoomButton.addEventListener("click", joinOnlineRoom);
   els.leaveRoomButton.addEventListener("click", leaveOnlineRoom);
+  els.deleteAllRoomsButton?.addEventListener("click", deleteAllOnlineRooms);
   els.seatSelect.addEventListener("change", () => {
     online.playerId = Number(els.seatSelect.value) || null;
     if (online.playerId) localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
@@ -1220,20 +1254,27 @@ function renderSetup() {
   els.nameFields.innerHTML = "";
   for (let index = 0; index < state.setupCount; index += 1) {
     const label = document.createElement("label");
+    const playerEditable = canEditSetupPlayer(index);
     const avatarOptionsHtml = avatarOptions
       .map((avatar) => `<option value="${avatar}" ${avatar === state.avatars[index] ? "selected" : ""}>${avatar}</option>`)
       .join("");
-    label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${setupEditable ? "" : "disabled"} /><select data-avatar-index="${index}" ${setupEditable ? "" : "disabled"}>${avatarOptionsHtml}</select>`;
+    label.innerHTML = `<span>P${index + 1}</span><input data-index="${index}" maxlength="12" value="${escapeHtml(state.names[index])}" ${playerEditable ? "" : "disabled"} /><select data-avatar-index="${index}" ${playerEditable ? "" : "disabled"}>${avatarOptionsHtml}</select>`;
     els.nameFields.append(label);
   }
   els.boardSizeInput.value = state.boardSize || DEFAULT_BOARD_SIZE;
   els.boardSizeInput.disabled = !setupEditable;
   els.boardSizeValue.textContent = `${state.boardSize || DEFAULT_BOARD_SIZE}マス`;
-  els.startGameButton.disabled = !setupEditable;
+  const joinedCount = online.enabled ? participantCountFromSeats(online.seats) : state.setupCount;
+  els.startGameButton.disabled = !setupEditable || joinedCount < 2;
 }
 
 function startOrderPhase() {
   if (!requireSetupControl()) return;
+  const joinedCount = online.enabled ? participantCountFromSeats(online.seats) : state.setupCount;
+  if (joinedCount < 2) {
+    localNotice("最低でも2人のプレイヤーが参加してから開始してください。");
+    return;
+  }
   state.boardSize = clamp(Number(state.boardSize) || DEFAULT_BOARD_SIZE, MIN_BOARD_SIZE, MAX_BOARD_SIZE);
   state.board = createBoardPattern(state.boardSize);
   state.branches = createBoardBranches(state.board);
@@ -1695,12 +1736,12 @@ function chooseSalesOption(optionId) {
 }
 
 function openMinigame(type) {
-  const player = currentPlayer();
+  const participants = livingPlayers().map((player) => player.id);
   state.phase = "minigame";
   state.minigame = {
     type,
-    playerId: player?.id || livingPlayers()[0]?.id || 1,
-    result: null,
+    playerIds: participants,
+    results: {},
   };
   addLog(`全体イベント: ${type === "chinchiro" ? "チンチロ" : "ポーカー"}。賭け金を選んで勝負できます。`);
   renderAll();
@@ -1709,14 +1750,33 @@ function openMinigame(type) {
 
 function minigamePlayer() {
   if (!state.minigame) return null;
-  return state.players.find((player) => player.id === state.minigame.playerId) || currentPlayer();
+  if (online.enabled && online.playerId) {
+    const ownPlayer = state.players.find((player) => player.id === online.playerId);
+    if (ownPlayer && minigameParticipantIds().includes(ownPlayer.id)) return ownPlayer;
+  }
+  const selected = selectedEditorPlayer();
+  if (selected && minigameParticipantIds().includes(selected.id)) return selected;
+  return state.players.find((player) => minigameParticipantIds().includes(player.id)) || currentPlayer();
+}
+
+function minigameParticipantIds() {
+  if (!state.minigame) return [];
+  if (Array.isArray(state.minigame.playerIds)) return state.minigame.playerIds;
+  return livingPlayers().map((player) => player.id);
+}
+
+function minigameResultFor(playerId) {
+  if (!state.minigame) return null;
+  if (state.minigame.results && state.minigame.results[playerId]) return state.minigame.results[playerId];
+  if (state.minigame.playerId === playerId && state.minigame.result) return state.minigame.result;
+  return null;
 }
 
 function playMinigame(bet) {
   const player = minigamePlayer();
   if (!player || state.phase !== "minigame") return;
   if (!requirePlayerControl(player)) return;
-  if (state.minigame?.result) return;
+  if (minigameResultFor(player.id)) return;
   const wager = Math.min(Number(bet) || 0, player.money);
   if (wager <= 0) {
     addLog("賭け金が足りません。");
@@ -1724,7 +1784,8 @@ function playMinigame(bet) {
   }
   const result = state.minigame.type === "chinchiro" ? resolveChinchiro(wager) : resolvePoker(wager);
   player.money = Math.max(0, player.money + result.delta);
-  state.minigame.result = result;
+  state.minigame.results = state.minigame.results || {};
+  state.minigame.results[player.id] = result;
   addLog(`${player.name} は${result.label}。${result.delta >= 0 ? `${result.delta}G獲得` : `${Math.abs(result.delta)}G損失`}。`);
   renderAll();
   markChanged();
@@ -1733,7 +1794,14 @@ function playMinigame(bet) {
 function finishMinigame() {
   const player = minigamePlayer();
   if (!player || state.phase !== "minigame") return;
-  if (!requirePlayerControl(player)) return;
+  if (online.enabled && !online.isHost) {
+    localNotice("全員の結果が出たら部屋主が進行します。");
+    return;
+  }
+  if (!minigameParticipantIds().every((id) => minigameResultFor(id))) {
+    localNotice("全員のミニゲーム結果が出るまで待ってください。");
+    return;
+  }
   state.phase = "turn";
   state.minigame = null;
   finishAction();
@@ -1903,6 +1971,7 @@ function closeShopOrForge() {
 function openForge(player) {
   state.phase = "forge";
   selectedSynthesis = [];
+  forgeMode = "upgrade";
   addLog(`${player.name} は鍛造マスで装備を整えられます。`);
   renderAll();
 }
@@ -2547,6 +2616,7 @@ async function createOnlineRoom() {
     online.enabled = true;
     online.ready = true;
     online.playerId = 1;
+    online.seats = { [online.clientId]: 1 };
     state.setupCount = setupCountFromSeats({ [online.clientId]: 1 });
     els.seatSelect.value = String(online.playerId);
     localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
@@ -2582,6 +2652,7 @@ async function joinOnlineRoom() {
     online.enabled = true;
     online.ready = true;
     online.playerId = data.playerId;
+    online.seats = data.seats || {};
     if (online.playerId) localStorage.setItem(ONLINE_SEAT_KEY, String(online.playerId));
     else localStorage.removeItem(ONLINE_SEAT_KEY);
     if (data.state) applyRemoteState(data.state);
@@ -2601,11 +2672,52 @@ async function leaveOnlineRoom() {
   online.ready = false;
   online.roomId = "";
   online.roomRef = null;
+  online.seats = {};
   online.isHost = false;
   window.clearTimeout(online.saveTimer);
   clearBattleLoops();
   setOnlineStatus("退出しました。");
   renderAll();
+}
+
+async function deleteAllOnlineRooms() {
+  const ok = window.confirm("オンライン部屋をすべて削除します。参加中の部屋も消えます。実行しますか？");
+  if (!ok) return;
+  try {
+    await setupOnlineFirebase();
+    const { collection, getDocs, writeBatch } = online.modules;
+    const snapshot = await getDocs(collection(online.db, "sugorokuRooms"));
+    if (snapshot.empty) {
+      setOnlineStatus("削除する部屋はありません。");
+      return;
+    }
+    let batch = writeBatch(online.db);
+    let batchCount = 0;
+    let deleted = 0;
+    for (const roomDoc of snapshot.docs) {
+      batch.delete(roomDoc.ref);
+      batchCount += 1;
+      deleted += 1;
+      if (batchCount >= 450) {
+        await batch.commit();
+        batch = writeBatch(online.db);
+        batchCount = 0;
+      }
+    }
+    if (batchCount > 0) await batch.commit();
+    if (online.unsubscribe) online.unsubscribe();
+    online.unsubscribe = null;
+    online.enabled = false;
+    online.ready = false;
+    online.roomId = "";
+    online.roomRef = null;
+    online.seats = {};
+    online.isHost = false;
+    setOnlineStatus(`${deleted}件の部屋を削除しました。`);
+    renderAll();
+  } catch (error) {
+    setOnlineStatus(`部屋削除失敗: ${error.message}`);
+  }
 }
 
 async function claimOnlineSeat() {
@@ -2633,6 +2745,8 @@ async function claimOnlineSeat() {
             ? { ...data.state, setupCount: setupCountFromSeats(nextSeats) }
             : data.state;
         transaction.set(online.roomRef, { seats: nextSeats, state: nextState }, { merge: true });
+        result = { ...data, seats: nextSeats, playerId };
+        return;
       }
     }
     result = { ...data, playerId };
@@ -2687,6 +2801,7 @@ function subscribeOnlineRoom() {
     const data = snapshot.data();
     if (!data?.state) return;
     online.isHost = data.hostId === online.clientId;
+    online.seats = data.seats || {};
     const remoteVersion = Number(data.state.syncVersion ?? data.syncVersion) || 0;
     const localVersion = Number(state.syncVersion) || 0;
     if (data.state.phase === "setup") {
@@ -2969,8 +3084,8 @@ function renderTurn() {
   }
 
   if (state.phase === "minigame") {
-    const gamePlayer = minigamePlayer();
-    els.turnTitle.textContent = `${gamePlayer?.name || "プレイヤー"} のミニゲーム`;
+    const done = minigameParticipantIds().filter((id) => minigameResultFor(id)).length;
+    els.turnTitle.textContent = `全員参加ミニゲーム ${done}/${minigameParticipantIds().length}`;
     return;
   }
 
@@ -3228,6 +3343,7 @@ function renderBackpack() {
     `;
     tile.draggable = editable;
     tile.addEventListener("click", () => {
+      if (suppressPlacedClick.uid === entry.uid && Date.now() < suppressPlacedClick.until) return;
       handlePlacedItemTap(entry, item);
     });
     tile.addEventListener("dragstart", (event) => {
@@ -3247,9 +3363,10 @@ function renderBackpack() {
     });
     tile.addEventListener("pointerdown", (event) => {
       if (!editable || event.pointerType === "mouse") return;
+      const wasSelected = selectedItem === entry.uid;
       selectedItem = entry.uid;
       dragSource = "backpack";
-      touchDrag = { uid: entry.uid, pointerId: event.pointerId, element: tile, moved: false };
+      touchDrag = { uid: entry.uid, pointerId: event.pointerId, element: tile, moved: false, wasSelected };
       tile.setPointerCapture?.(event.pointerId);
       tile.classList.add("touch-dragging");
       showItemDetail(entry, item);
@@ -3267,12 +3384,17 @@ function renderBackpack() {
       if (!touchDrag || touchDrag.uid !== entry.uid) return;
       const cell = cellFromPoint(event.clientX, event.clientY);
       const shouldMove = touchDrag.moved;
+      const wasSelected = touchDrag.wasSelected;
       tile.releasePointerCapture?.(event.pointerId);
       tile.classList.remove("touch-dragging");
       touchDrag = null;
       dragSource = null;
       if (shouldMove) placeFromCell(cell);
-      else clearPlacementPreview();
+      else {
+        clearPlacementPreview();
+        handlePlacedItemTap(entry, item, wasSelected);
+        suppressPlacedClick = { uid: entry.uid, until: Date.now() + 450 };
+      }
     });
     tile.addEventListener("pointercancel", () => {
       tile.classList.remove("touch-dragging");
@@ -3282,9 +3404,10 @@ function renderBackpack() {
     });
     tile.addEventListener("touchstart", (event) => {
       if (!editable || touchDrag) return;
+      const wasSelected = selectedItem === entry.uid;
       selectedItem = entry.uid;
       dragSource = "backpack";
-      touchDrag = { uid: entry.uid, touch: true, element: tile, moved: false };
+      touchDrag = { uid: entry.uid, touch: true, element: tile, moved: false, wasSelected };
       tile.classList.add("touch-dragging");
       showItemDetail(entry, item);
       event.preventDefault();
@@ -3306,13 +3429,15 @@ function renderBackpack() {
       const touch = event.changedTouches[0];
       const cell = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
       const shouldMove = touchDrag.moved;
+      const wasSelected = touchDrag.wasSelected;
       tile.classList.remove("touch-dragging");
       touchDrag = null;
       dragSource = null;
       if (shouldMove) placeFromCell(cell);
       else {
         clearPlacementPreview();
-        handlePlacedItemTap(entry, item);
+        handlePlacedItemTap(entry, item, wasSelected);
+        suppressPlacedClick = { uid: entry.uid, until: Date.now() + 450 };
       }
       event.preventDefault();
     }, { passive: false });
@@ -3338,16 +3463,16 @@ function renderItemCard(stashItem, item) {
   card.innerHTML = `
     <span class="rarity-dot"></span>
     <span class="item-name"><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</span>
-    <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item))}<br>${escapeHtml(itemTimingText(item))}</span>
+    <span class="item-meta">${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(shortEffect(item, stashItem.level))}<br>${escapeHtml(itemTimingText(item, stashItem.level))}</span>
   `;
   card.addEventListener("mouseenter", () => showItemDetail(stashItem, item));
   card.addEventListener("focus", () => showItemDetail(stashItem, item));
   return card;
 }
 
-function handlePlacedItemTap(entry, item) {
+function handlePlacedItemTap(entry, item, wasSelected = selectedItem === entry.uid) {
   const now = Date.now();
-  if (lastBackpackTap.uid === entry.uid && now - lastBackpackTap.at < 520) {
+  if (wasSelected || (lastBackpackTap.uid === entry.uid && now - lastBackpackTap.at < 520)) {
     lastBackpackTap = { uid: null, at: 0 };
     removePlacedItem(entry.uid);
     return;
@@ -3358,31 +3483,44 @@ function handlePlacedItemTap(entry, item) {
   renderBackpack();
 }
 
-function shortEffect(item) {
-  if (item.damage) return `攻撃 ${item.damage}`;
-  if (item.heal) return `回復 ${item.heal}`;
-  if (item.income) return `収入 ${item.income}G`;
+function leveledItemStats(item, level = 1) {
+  return {
+    damage: item.damage ? item.damage + (level - 1) * 2 + Math.ceil(rarityValue(item.rarity) / 2) : 0,
+    poison: item.poison ? item.poison + (level - 1) * 2 + Math.ceil(rarityValue(item.rarity) / 2) : 0,
+    heal: item.heal ? item.heal + level * 2 : 0,
+    income: item.income ? item.income + (level - 1) * 3 : 0,
+    shield: item.shield ? item.shield + (level - 1) * 2 : 0,
+    healOnHit: item.healOnHit ? item.healOnHit + level - 1 : 0,
+  };
+}
+
+function shortEffect(item, level = 1) {
+  const stats = leveledItemStats(item, level);
+  if (item.damage) return `攻撃 ${stats.damage}`;
+  if (item.heal) return `回復 ${stats.heal}`;
+  if (item.income) return `収入 ${stats.income}G`;
   if (item.boost || item.boostAll) return "強化";
-  if (item.poison) return `毒 ${item.poison}`;
+  if (item.poison) return `毒 ${stats.poison}`;
   return "特殊";
 }
 
-function itemTimingText(item) {
+function itemTimingText(item, level = 1) {
+  const stats = leveledItemStats(item, level);
   const parts = [];
-  if (item.damage) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに攻撃力${item.damage}`);
-  if (item.poison) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに毒攻撃${item.poison}`);
-  if (item.heal) parts.push(`戦闘中 ${((item.interval || 3500) / 1000).toFixed(1)}秒ごとにHP${item.heal}回復`);
-  if (item.income) parts.push(`自分の行動ターン開始時に${item.income}G収入`);
-  if (item.shield) parts.push(`戦闘開始時に盾${item.shield}獲得`);
+  if (item.damage) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに攻撃力${stats.damage}`);
+  if (item.poison) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに毒攻撃${stats.poison}`);
+  if (item.heal) parts.push(`戦闘中 ${((item.interval || 3500) / 1000).toFixed(1)}秒ごとにHP${stats.heal}回復`);
+  if (item.income) parts.push(`自分の行動ターン開始時に${stats.income}G収入`);
+  if (item.shield) parts.push(`戦闘開始時に盾${stats.shield}獲得`);
   if (item.boost) parts.push(`配置中、隣接攻撃アイテムを${Math.round(item.boost * 100)}%強化`);
   if (item.boostAll) parts.push(`配置中、攻撃アイテム全体を${Math.round(item.boostAll * 100)}%強化`);
   if (item.weaken) parts.push(`戦闘中、相手全体の攻撃力を${Math.round(item.weaken * 100)}%低下`);
-  if (item.healOnHit) parts.push(`攻撃命中時にHP${item.healOnHit}回復`);
+  if (item.healOnHit) parts.push(`攻撃命中時にHP${stats.healOnHit}回復`);
   return parts.join(" / ") || "配置中に効果発動";
 }
 
 function showItemDetail(stashItem, item) {
-  els.itemDetail.innerHTML = `<strong>${itemIcons[item.id] || "🎁"} ${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span><br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
+  els.itemDetail.innerHTML = `<strong>${itemIcons[item.id] || "🎁"} ${escapeHtml(item.name)} +${stashItem.level - 1}</strong><br>${escapeHtml(item.description)}<br><span class="timing-text">${escapeHtml(itemTimingText(item, stashItem.level))}</span><br>価格 ${item.price}G / 売却 ${item.sell + (stashItem.level - 1) * 15}G`;
 }
 
 function renderSelectedDetail(player) {
@@ -3398,7 +3536,12 @@ function shopCardHtml(item, extra = "") {
 }
 
 function renderShop() {
-  const forcedPanel = ["shop", "forge", "sales", "minigame"].includes(state.phase) && (!online.enabled || canControlPlayer(state.phase === "minigame" ? minigamePlayer() : currentPlayer()));
+  const forcedPanel = ["shop", "forge", "sales", "minigame"].includes(state.phase) && (
+    !online.enabled ||
+    (state.phase === "minigame"
+      ? minigameParticipantIds().includes(online.playerId) || online.isHost
+      : canControlPlayer(currentPlayer()))
+  );
   const mode = forcedPanel ? state.phase : "personal";
   const player = forcedPanel ? (mode === "minigame" ? minigamePlayer() : currentPlayer()) : personalShopPlayer();
   const visible =
@@ -3486,53 +3629,98 @@ function renderShop() {
       ? "賭け金を選んで3つのサイコロを振ります。ゾロ目やシゴロで大勝ち、ヒフミは大損です。"
       : "賭け金を選んで5枚のカードで勝負します。ペア以上で配当が出ます。";
     els.shopContent.append(intro);
-    if (state.minigame?.result) {
-      const resultBox = document.createElement("div");
-      resultBox.className = "message-box minigame-result";
-      const delta = state.minigame.result.delta;
-      resultBox.textContent = `${state.minigame.result.label} / ${delta >= 0 ? `${delta}G獲得` : `${Math.abs(delta)}G損失`}`;
-      els.shopContent.append(resultBox);
-      els.shopContent.append(actionButton("結果を確認して次へ", "primary-button", finishMinigame, !canControlPlayer(player)));
-    } else {
+    const participants = minigameParticipantIds()
+      .map((id) => state.players.find((entry) => entry.id === id))
+      .filter(Boolean);
+    const resultGrid = document.createElement("div");
+    resultGrid.className = "shop-grid minigame-results-grid";
+    participants.forEach((participant) => {
+      const result = minigameResultFor(participant.id);
+      const card = document.createElement("div");
+      card.className = `shop-item minigame-player-card ${result ? "done" : "waiting"}`;
+      const delta = result?.delta || 0;
+      card.innerHTML = `<h3>${escapeHtml(participant.avatar || "")} ${escapeHtml(participant.name)}</h3><p>${result ? `${escapeHtml(result.label)}<br>${delta >= 0 ? `${delta}G獲得` : `${Math.abs(delta)}G損失`}` : "参加待ち"}</p>`;
+      resultGrid.append(card);
+    });
+    els.shopContent.append(resultGrid);
+    const ownResult = player ? minigameResultFor(player.id) : null;
+    if (!ownResult) {
       const row = document.createElement("div");
       row.className = "action-row minigame-bets";
       [20, 50, 100].forEach((bet) => {
         row.append(actionButton(`${bet}G賭ける`, "secondary-button", () => playMinigame(bet), !canControlPlayer(player) || player.money < bet));
       });
       els.shopContent.append(row);
+    } else {
+      const resultBox = document.createElement("div");
+      resultBox.className = "message-box minigame-result";
+      resultBox.textContent = "あなたの結果は確定済みです。全員の結果を待ちます。";
+      els.shopContent.append(resultBox);
     }
+    const allDone = participants.every((participant) => minigameResultFor(participant.id));
+    els.shopContent.append(actionButton("全員の結果を確認して次へ", "primary-button", finishMinigame, !allDone || (online.enabled && !online.isHost)));
   } else if (mode === "forge") {
     els.shopTitle.textContent = "鍛造";
-    const synthGrid = document.createElement("div");
-    synthGrid.className = "shop-grid synth-grid";
-    const candidates = synthesisCandidates(player);
-    candidates.forEach((candidate) => {
-      const stashItem = candidate.entry;
-      const item = itemById(stashItem.itemId);
-      const card = document.createElement("div");
-      card.className = `shop-item synth-item ${selectedSynthesis.includes(stashItem.uid) ? "selected" : ""}`;
-      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</h3><p>${candidate.source} / ${rarityNames[item.rarity]} / ${item.w}×${item.h}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span></p>`;
-      card.append(actionButton(selectedSynthesis.includes(stashItem.uid) ? "選択中" : "合成に選ぶ", "secondary-button", () => toggleSynthesisItem(stashItem.uid), !canControlPlayer(player)));
-      synthGrid.append(card);
+    const toggle = document.createElement("div");
+    toggle.className = "segmented forge-mode-toggle";
+    const upgradeButton = actionButton("強化", forgeMode === "upgrade" ? "active" : "", () => {
+      forgeMode = "upgrade";
+      selectedSynthesis = [];
+      renderShop();
     });
-    if (candidates.length) {
-      const synthTitle = document.createElement("h3");
-      synthTitle.className = "shop-subtitle";
-      synthTitle.textContent = "合成するアイテムを2つ選択";
-      els.shopContent.append(synthTitle, synthGrid);
+    const synthButton = actionButton("合成", forgeMode === "synthesis" ? "active" : "", () => {
+      forgeMode = "synthesis";
+      renderShop();
+    });
+    toggle.append(upgradeButton, synthButton);
+    els.shopContent.append(toggle);
+
+    if (forgeMode === "synthesis") {
+      const synthGrid = document.createElement("div");
+      synthGrid.className = "shop-grid synth-grid";
+      const candidates = synthesisCandidates(player);
+      candidates.forEach((candidate) => {
+        const stashItem = candidate.entry;
+        const item = itemById(stashItem.itemId);
+        const card = document.createElement("div");
+        card.className = `shop-item synth-item ${selectedSynthesis.includes(stashItem.uid) ? "selected" : ""}`;
+        card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${stashItem.level - 1}</h3><p>${candidate.source} / ${rarityNames[item.rarity]} / ${item.w}×${item.h}<br><span class="timing-text">${escapeHtml(itemTimingText(item, stashItem.level))}</span></p>`;
+        card.append(actionButton(selectedSynthesis.includes(stashItem.uid) ? "選択中" : "合成に選ぶ", "secondary-button", () => toggleSynthesisItem(stashItem.uid), !canControlPlayer(player)));
+        synthGrid.append(card);
+      });
+      if (candidates.length) {
+        const synthTitle = document.createElement("h3");
+        synthTitle.className = "shop-subtitle";
+        synthTitle.textContent = "合成するアイテムを2つ選択";
+        els.shopContent.append(synthTitle, synthGrid);
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "message-box";
+        empty.textContent = "合成できるアイテムがありません。";
+        els.shopContent.append(empty);
+      }
+      els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2 || !canControlPlayer(player)));
+    } else {
+      const grid = document.createElement("div");
+      grid.className = "shop-grid";
+      player.backpack.forEach((entry) => {
+        const item = itemById(entry.itemId);
+        const card = document.createElement("div");
+        card.className = "shop-item";
+        const cost = 70 + entry.level * 45;
+        card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${cost}G<br>現在: <span class="timing-text">${escapeHtml(itemTimingText(item, entry.level))}</span><br>強化後: <span class="timing-text">${escapeHtml(itemTimingText(item, entry.level + 1))}</span></p>`;
+        card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid), !canControlPlayer(player)));
+        grid.append(card);
+      });
+      if (player.backpack.length) {
+        els.shopContent.append(grid);
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "message-box";
+        empty.textContent = "強化するにはアイテムをバックパックに入れてください。";
+        els.shopContent.append(empty);
+      }
     }
-    const grid = document.createElement("div");
-    grid.className = "shop-grid";
-    player.backpack.forEach((entry) => {
-      const item = itemById(entry.itemId);
-      const card = document.createElement("div");
-      card.className = "shop-item";
-      card.innerHTML = `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)} +${entry.level - 1}</h3><p>強化費用 ${70 + entry.level * 45}G<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span></p>`;
-      card.append(actionButton("強化", "secondary-button", () => upgradePlacedItem(entry.uid), !canControlPlayer(player)));
-      grid.append(card);
-    });
-    els.shopContent.append(grid);
-    els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2 || !canControlPlayer(player)));
   } else {
     els.shopTitle.textContent = "ショップ";
     if (!Array.isArray(player.personalShop)) player.personalShop = [];
