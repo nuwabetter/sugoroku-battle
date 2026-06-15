@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DotGothic16&display=swap");
+﻿@import url("https://fonts.googleapis.com/css2?family=DotGothic16&display=swap");
 
 :root {
   color-scheme: light;
@@ -433,10 +433,11 @@ textarea {
 .board-wrap {
   margin-top: 0;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   width: 100%;
   max-width: 100%;
   min-height: 154px;
+  max-height: 238px;
   padding: 0;
   scroll-behavior: smooth;
   scrollbar-color: #d9a514 rgba(255, 255, 255, 0.65);
@@ -451,7 +452,7 @@ textarea {
   gap: 18px;
   align-items: center;
   min-height: 154px;
-  padding: 48px 24px 42px;
+  padding: 66px 24px 58px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 226, 122, 0.14)),
     url("./assets/pixel-map.png") left center / auto 100% repeat-x;
@@ -502,46 +503,47 @@ textarea {
   position: absolute;
   left: 50%;
   display: flex;
-  gap: 9px;
-  transform: translateX(-10px) rotate(-28deg);
+  gap: 10px;
+  transform: translateX(-8px) rotate(-22deg);
   transform-origin: left center;
   pointer-events: none;
-  z-index: 3;
+  z-index: 4;
 }
 
 .branch-path::before {
   content: "";
   position: absolute;
-  left: -8px;
-  right: -8px;
+  left: -12px;
+  right: -12px;
   top: 50%;
-  height: 8px;
+  height: 10px;
   transform: translateY(-50%);
-  border: 2px solid rgba(255, 255, 255, 0.78);
-  border-radius: 999px;
-  background: repeating-linear-gradient(90deg, #211907 0 8px, #ffe79b 8px 14px);
-  box-shadow: 0 3px 0 rgba(33, 25, 7, 0.25);
-}
+  border: 3px solid #211907;
+  border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #fff8df 0 12px, #c98b25 12px 20px);
+  box-shadow: 0 4px 0 rgba(33, 25, 7, 0.25);
 }
 
 .branch-top {
-  bottom: calc(100% - 4px);
+  bottom: calc(100% + 8px);
 }
 
 .branch-bottom {
-  top: calc(100% - 4px);
-  transform: translateX(-12px) rotate(28deg);
+  top: calc(100% + 8px);
+  transform: translateX(-8px) rotate(22deg);
 }
 
 .branch-node {
   position: relative;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   border: 4px solid #211907;
   border-radius: 6px;
   background: var(--space-color);
-  box-shadow: 0 4px 0 rgba(33, 25, 7, 0.32), inset 0 -5px 0 rgba(33, 25, 7, 0.14);
+  box-shadow:
+    0 4px 0 rgba(33, 25, 7, 0.32),
+    inset 0 -5px 0 rgba(33, 25, 7, 0.14);
   opacity: 1;
   z-index: 1;
 }
@@ -554,20 +556,20 @@ textarea {
 }
 
 .space.has-branch::after {
-  content: "⇄";
+  content: "ROUTE";
   position: absolute;
   left: 50%;
-  top: -28px;
+  top: -32px;
   display: grid;
-  width: 30px;
+  width: 52px;
   height: 22px;
   place-items: center;
   transform: translateX(-50%);
   border: 2px solid #211907;
-  border-radius: 999px;
+  border-radius: 4px;
   background: #fff7cf;
   color: #211907;
-  font-size: 14px;
+  font-size: 10px;
   font-weight: 900;
   box-shadow: 0 3px 0 rgba(33, 25, 7, 0.2);
 }
@@ -1114,7 +1116,7 @@ textarea {
 }
 
 .grid-cell.preview-anchor::before {
-  content: "置く";
+  content: "鄂ｮ縺・;
   position: absolute;
   inset: auto 4px 4px;
   border-radius: 999px;
@@ -1291,6 +1293,22 @@ textarea {
 .dark-shop-item {
   border-color: #8b6cc8;
   background: linear-gradient(135deg, #fff, #f5efff);
+}
+
+.sales-item {
+  border-color: #efb36a;
+  background: linear-gradient(135deg, #fff, #fff2df);
+}
+
+.sales-item h3 {
+  color: #9b5b13;
+}
+
+.minigame-bets {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fff, #eef7ff);
+  padding: 8px;
 }
 
 .dice-shop-item img {
@@ -1817,7 +1835,7 @@ textarea {
   }
 
   body.game-view .layout {
-    padding-top: 196px;
+    padding-top: 232px;
   }
 
   body.game-view .board-column {
@@ -1827,10 +1845,12 @@ textarea {
     right: 0;
     z-index: 30;
     width: 100%;
-    max-height: 196px;
+    max-height: 232px;
     margin: 0;
     border-radius: 0 0 10px 10px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     box-shadow:
       0 7px 0 rgba(119, 89, 10, 0.22),
       0 10px 24px rgba(72, 47, 6, 0.18);
@@ -1840,9 +1860,11 @@ textarea {
     width: 100%;
     max-width: 100%;
     min-height: 124px;
+    max-height: 218px;
     padding-top: 0;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .board-grid {
@@ -1852,7 +1874,7 @@ textarea {
     max-width: none;
     gap: 16px;
     min-height: 124px;
-    padding: 36px 14px 28px;
+    padding: 58px 14px 52px;
   }
 
   .space {

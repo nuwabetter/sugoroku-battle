@@ -41,6 +41,7 @@ const spaceTypes = {
   minus: { label: "マイナス", color: "#d4453f" },
   lucky: { label: "ラッキー", color: "#d7a12b" },
   shop: { label: "闇商人", color: "#49306b" },
+  sales: { label: "営業", color: "#ef8f35" },
   forge: { label: "鍛造", color: "#8758b8" },
   combat: { label: "戦闘", color: "#1f2937" },
   goal: { label: "人生終了マス", color: "linear-gradient(135deg, #ff8ab3, #ffa7a0, #b7f7c4, #8bd9ff, #c7a8ff)" },
@@ -395,12 +396,13 @@ const randomSpaceWeights = [
   ["plus", 42],
   ["minus", 15],
   ["shop", 13],
+  ["sales", 10],
   ["lucky", 9],
   ["combat", 9],
   ["forge", 12],
 ];
 
-const HAPPENING_CHANCE = 0.16;
+const HAPPENING_CHANCE = 0.08;
 const ITEM_GAIN_EFFECT_MS = 1450;
 const BATTLE_ACTION_EFFECT_MS = 1000;
 const SPECIAL_DICE = {
@@ -444,6 +446,8 @@ let selectedSynthesis = [];
 let placementPreview = null;
 let touchDrag = null;
 let dragSource = null;
+let lastBackpackTap = { uid: null, at: 0 };
+let displayedBattleActionIds = new Set();
 let isAnimatingMove = false;
 let uiEffects = {
   space: null,
@@ -538,6 +542,10 @@ function newGameState() {
     pendingShop: [],
     pendingShopDice: [],
     shopRerolled: false,
+    salesOptions: [],
+    minigame: null,
+    pendingBranchChoice: null,
+    eventCount: 0,
     battle: null,
     winnerId: null,
     syncVersion: 0,
@@ -777,12 +785,21 @@ function recentBattleActionFor(playerId, role) {
   const effects = ensureEffects();
   const action = [...effects.battleActions].reverse().find((entry) => {
     if (now - entry.at > BATTLE_ACTION_EFFECT_MS) return false;
+    if (displayedBattleActionIds.has(`${role}:${entry.id}:${playerId}`)) return false;
     if (role === "actor" && entry.type === "damage") return false;
     if (role === "actor") return entry.actorId === playerId;
     if (role === "target") return entry.targetIds?.includes(playerId);
     return false;
   });
   return action ? { ...action, elapsed: now - action.at } : null;
+}
+
+function markBattleActionDisplayed(action, role, playerId) {
+  if (!action?.id) return;
+  displayedBattleActionIds.add(`${role}:${action.id}:${playerId}`);
+  if (displayedBattleActionIds.size > 160) {
+    displayedBattleActionIds = new Set([...displayedBattleActionIds].slice(-80));
+  }
 }
 
 function normalizeGameState(gameState) {
@@ -798,6 +815,10 @@ function normalizeGameState(gameState) {
   gameState.branches = sanitizeBranches(gameState.branches, gameState.board.length);
   if (!Array.isArray(gameState.pendingShopDice)) gameState.pendingShopDice = [];
   gameState.shopRerolled = Boolean(gameState.shopRerolled);
+  if (!Array.isArray(gameState.salesOptions)) gameState.salesOptions = [];
+  if (!gameState.minigame || typeof gameState.minigame !== "object") gameState.minigame = null;
+  if (!gameState.pendingBranchChoice || typeof gameState.pendingBranchChoice !== "object") gameState.pendingBranchChoice = null;
+  gameState.eventCount = Number(gameState.eventCount) || 0;
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -1032,6 +1053,9 @@ function phaseLabel() {
     shop: "闇商人",
     forge: "鍛造",
     combatChoice: "戦闘相手選択",
+    sales: "営業",
+    minigame: "ミニゲーム",
+    branchChoice: "分岐選択",
     battlePrep: "戦闘準備",
     battle: "戦闘中",
     battleResult: "戦闘結果",
@@ -1282,7 +1306,7 @@ function nextBranchFrom(position) {
   return activeBranches().find((branch) => branch.from === position) || null;
 }
 
-function stepPlayerForward(player) {
+function stepPlayerForward(player, branchMode = "auto") {
   const branch = branchForPlayer(player);
   if (branch) {
     if (player.branch.index < branch.spaces.length - 1) {
@@ -1296,13 +1320,81 @@ function stepPlayerForward(player) {
 
   const next = clamp(player.position + 1, 0, activeBoard().length - 1);
   const enteringBranch = nextBranchFrom(next);
-  if (enteringBranch?.spaces?.length && next < activeBoard().length - 1) {
+  if (enteringBranch?.spaces?.length && next < activeBoard().length - 1 && branchMode !== "main") {
     player.position = enteringBranch.from;
     player.branch = { id: enteringBranch.id, index: 0 };
     addLog(`${player.name} は分岐ルートに入りました。`);
     return;
   }
   player.position = next;
+}
+
+async function movePlayerSteps(player, steps, baseRoll, bonus, branchDecision = null) {
+  isAnimatingMove = true;
+  for (let step = 0; step < steps; step += 1) {
+    const before = player.position;
+    if (!player.branch) {
+      const next = clamp(player.position + 1, 0, activeBoard().length - 1);
+      const enteringBranch = nextBranchFrom(next);
+      if (enteringBranch?.spaces?.length && next < activeBoard().length - 1 && !branchDecision) {
+        player.position = next;
+        state.phase = "branchChoice";
+        state.pendingBranchChoice = {
+          playerId: player.id,
+          branchId: enteringBranch.id,
+          remaining: steps - step - 1,
+          baseRoll,
+          bonus,
+        };
+        isAnimatingMove = false;
+        addLog(`${player.name} は分岐入口に到着しました。進むルートを選びます。`);
+        renderAll();
+        markChanged();
+        return false;
+      }
+    }
+    stepPlayerForward(player, branchDecision === "main" ? "main" : "auto");
+    branchDecision = null;
+    renderBoard();
+    await sleep(180);
+    if (!player.branch && player.position === activeBoard().length - 1) break;
+    if (!player.branch && player.position === before && before === activeBoard().length - 1) break;
+  }
+  isAnimatingMove = false;
+  return true;
+}
+
+function completeMove(player, baseRoll, bonus) {
+  player.turnCount += 1;
+  state.pendingBranchChoice = null;
+  addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
+  showSpaceEffect(player.position, currentSpaceTypeFor(player));
+  resolveSpace(player);
+  renderAll();
+}
+
+async function chooseBranchRoute(route) {
+  const pending = state.pendingBranchChoice;
+  if (!pending || state.phase !== "branchChoice") return;
+  const player = state.players.find((entry) => entry.id === pending.playerId);
+  if (!player || !requirePlayerControl(player)) return;
+  const branch = activeBranches().find((entry) => entry.id === pending.branchId);
+  if (!branch) return;
+  state.phase = "turn";
+  if (route === "branch") {
+    player.position = branch.from;
+    player.branch = { id: branch.id, index: 0 };
+    addLog(`${player.name} は分岐ルートを選びました。`);
+    renderBoard();
+    await sleep(180);
+    const finished = await movePlayerSteps(player, pending.remaining, pending.baseRoll, pending.bonus, null);
+    if (finished) completeMove(player, pending.baseRoll, pending.bonus);
+  } else {
+    player.branch = null;
+    addLog(`${player.name} は本線ルートを選びました。`);
+    const finished = await movePlayerSteps(player, pending.remaining, pending.baseRoll, pending.bonus, "main");
+    if (finished) completeMove(player, pending.baseRoll, pending.bonus);
+  }
 }
 
 function maybeTriggerHappening(player, spaceType) {
@@ -1359,21 +1451,8 @@ async function rollMoveDice(dieUid = null, chosenRoll = null) {
       addLog(`${dieInfo.name} は使い切りました。`);
     }
   }
-  isAnimatingMove = true;
-  for (let step = 0; step < total; step += 1) {
-    const before = player.position;
-    stepPlayerForward(player);
-    renderBoard();
-    await sleep(180);
-    if (!player.branch && player.position === activeBoard().length - 1) break;
-    if (!player.branch && player.position === before && before === activeBoard().length - 1) break;
-  }
-  isAnimatingMove = false;
-  player.turnCount += 1;
-  addLog(`${player.name} は ${baseRoll}${bonus ? ` + ${bonus}` : ""} マス進みました。`);
-  showSpaceEffect(player.position, currentSpaceTypeFor(player));
-  resolveSpace(player);
-  renderAll();
+  const finished = await movePlayerSteps(player, total, baseRoll, bonus);
+  if (finished) completeMove(player, baseRoll, bonus);
 }
 
 function resolveSpace(player) {
@@ -1384,34 +1463,30 @@ function resolveSpace(player) {
   addLog(`${player.name} は「${name}」に止まりました。`);
 
   if (type === "plus") {
-    const happened = maybeTriggerHappening(player, type);
-    if (!happened) {
-      const effect = choice(["money", "item"]);
-      if (effect === "money") {
-        const money = rand(25, 70);
-        player.money += money;
-        addLog(`${player.name} は ${money}G を得ました。`);
-      } else {
-        const items = addRandomItems(player, rand(1, 2), "white");
-        addLog(`${player.name} は ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
-      }
+    const effect = choice(["money", "item"]);
+    if (effect === "money") {
+      const money = rand(25, 70);
+      player.money += money;
+      addLog(`${player.name} は ${money}G を得ました。`);
+    } else {
+      const items = addRandomItems(player, rand(1, 2), "white");
+      addLog(`${player.name} は ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
     }
+    maybeTriggerHappening(player, type);
     player.position = landedPosition;
     player.branch = landedBranch;
     finishAction();
   } else if (type === "minus") {
-    const happened = maybeTriggerHappening(player, type);
-    if (!happened) {
-      const effect = choice(["money", "penalty"]);
-      if (effect === "money") {
-        const loss = Math.min(player.money, rand(20, 60));
-        player.money -= loss;
-        addLog(`${player.name} は ${loss}G を失いました。`);
-      } else {
-        player.nextBattlePenalty += 0.12;
-        addLog(`${player.name} は次の戦闘で攻撃力が下がります。`);
-      }
+    const effect = choice(["money", "penalty"]);
+    if (effect === "money") {
+      const loss = Math.min(player.money, rand(20, 60));
+      player.money -= loss;
+      addLog(`${player.name} は ${loss}G を失いました。`);
+    } else {
+      player.nextBattlePenalty += 0.12;
+      addLog(`${player.name} は次の戦闘で攻撃力が下がります。`);
     }
+    maybeTriggerHappening(player, type);
     player.position = landedPosition;
     player.branch = landedBranch;
     finishAction();
@@ -1432,6 +1507,8 @@ function resolveSpace(player) {
     finishAction();
   } else if (type === "shop") {
     openShop(player);
+  } else if (type === "sales") {
+    openSales(player);
   } else if (type === "forge") {
     openForge(player);
   } else if (type === "combat") {
@@ -1478,26 +1555,211 @@ function maybeTriggerEvent() {
 }
 
 function triggerEvent() {
-  const event = choice(["bonus", "tax", "drop", "brawl"]);
+  state.eventCount = (Number(state.eventCount) || 0) + 1;
+  const pool = ["bonus", "drop", "chinchiro", "poker"];
+  if (state.eventCount > 2) pool.push("brawl");
+  const event = choice(pool);
   if (event === "bonus") {
     state.players.forEach((player) => {
       if (!player.defeated) player.money += 50;
     });
     addLog("全体イベント: 祝祭。全員が 50G を得ました。");
-  } else if (event === "tax") {
-    state.players.forEach((player) => {
-      if (!player.defeated) player.money = Math.max(0, player.money - 35);
-    });
-    addLog("全体イベント: 大徴税。全員が 35G を失いました。");
   } else if (event === "drop") {
     state.players.forEach((player) => {
       if (!player.defeated) addRandomItems(player, 2, "green");
     });
     addLog("全体イベント: 補給便。全員がアイテムを2つ得ました。");
+  } else if (event === "chinchiro" || event === "poker") {
+    openMinigame(event);
   } else {
     addLog("全体イベント: 大乱戦。全員参加の戦闘が始まります。");
     startBattle(livingPlayers().map((player) => player.id), false, "大乱戦イベント");
   }
+}
+
+const salesChoiceCatalog = [
+  {
+    id: "golf",
+    name: "接待ゴルフ",
+    description: "80〜140Gを獲得するが、1マス後ろに下がる。",
+  },
+  {
+    id: "tissue",
+    name: "ティッシュ配り",
+    description: "アイテムをランダムに1つ失うが、100G獲得。",
+  },
+  {
+    id: "loan",
+    name: "闇金回収",
+    description: "200G獲得、または200G損失。",
+  },
+  {
+    id: "tomato",
+    name: "美術品にトマト缶投げ",
+    description: "60〜120G失い、青以上のアイテムを1つ獲得。",
+  },
+  {
+    id: "vegan",
+    name: "ヴィーガン活動",
+    description: "回復系アイテムを1つ獲得。",
+  },
+  {
+    id: "draft",
+    name: "徴兵",
+    description: "攻撃系アイテムを1つ獲得。",
+  },
+];
+
+function openSales(player) {
+  state.phase = "sales";
+  state.salesOptions = [...salesChoiceCatalog]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map((option) => option.id);
+  addLog(`${player.name} は営業マスで営業先を選びます。`);
+  renderAll();
+}
+
+function randomItemByFilter(predicate, fallbackMinimum = "white") {
+  const pool = itemCatalog.filter(predicate);
+  if (!pool.length) return randomItem(fallbackMinimum);
+  return makeItem(choice(pool).id);
+}
+
+function removeRandomOwnedItem(player) {
+  const owned = [
+    ...player.stash.map((entry) => ({ source: "stash", entry })),
+    ...player.backpack.map((entry) => ({ source: "backpack", entry })),
+  ];
+  if (!owned.length) return null;
+  const target = choice(owned);
+  if (target.source === "stash") player.stash = player.stash.filter((entry) => entry.uid !== target.entry.uid);
+  else player.backpack = player.backpack.filter((entry) => entry.uid !== target.entry.uid);
+  return target.entry;
+}
+
+function moveBackOneWithoutEffect(player) {
+  if (player.branch) {
+    if (player.branch.index > 0) player.branch.index -= 1;
+    else player.branch = null;
+    return;
+  }
+  player.position = Math.max(0, player.position - 1);
+}
+
+function chooseSalesOption(optionId) {
+  const player = currentPlayer();
+  if (!player || state.phase !== "sales") return;
+  if (!requirePlayerControl(player)) return;
+  const option = salesChoiceCatalog.find((entry) => entry.id === optionId);
+  if (!option || !state.salesOptions.includes(optionId)) return;
+  if (optionId === "golf") {
+    const money = rand(80, 140);
+    player.money += money;
+    moveBackOneWithoutEffect(player);
+    addLog(`${player.name} は接待ゴルフで ${money}G 獲得し、1マス後ろに下がりました。`);
+  } else if (optionId === "tissue") {
+    const removed = removeRandomOwnedItem(player);
+    player.money += 100;
+    addLog(`${player.name} はティッシュ配りで100G獲得。${removed ? itemById(removed.itemId).name : "失うアイテムなし"}。`);
+  } else if (optionId === "loan") {
+    if (Math.random() < 0.5) {
+      player.money += 200;
+      addLog(`${player.name} は闇金回収で200G獲得しました。`);
+    } else {
+      player.money = Math.max(0, player.money - 200);
+      addLog(`${player.name} は闇金回収に失敗し200G失いました。`);
+    }
+  } else if (optionId === "tomato") {
+    const loss = Math.min(player.money, rand(60, 120));
+    player.money -= loss;
+    const item = randomItem("blue");
+    player.stash.push(item);
+    queueItemGain(player, [item]);
+    addLog(`${player.name} は美術品にトマト缶を投げ、${loss}G失い ${itemById(item.itemId).name} を得ました。`);
+  } else if (optionId === "vegan") {
+    const item = randomItemByFilter((entry) => entry.heal || entry.healOnHit, "green");
+    player.stash.push(item);
+    queueItemGain(player, [item]);
+    addLog(`${player.name} はヴィーガン活動で ${itemById(item.itemId).name} を得ました。`);
+  } else if (optionId === "draft") {
+    const item = randomItemByFilter((entry) => entry.damage || entry.poison, "white");
+    player.stash.push(item);
+    queueItemGain(player, [item]);
+    addLog(`${player.name} は徴兵で ${itemById(item.itemId).name} を得ました。`);
+  }
+  state.salesOptions = [];
+  state.phase = "turn";
+  finishAction();
+  renderAll();
+}
+
+function openMinigame(type) {
+  const player = currentPlayer();
+  state.phase = "minigame";
+  state.minigame = {
+    type,
+    playerId: player?.id || livingPlayers()[0]?.id || 1,
+    result: null,
+  };
+  addLog(`全体イベント: ${type === "chinchiro" ? "チンチロ" : "ポーカー"}。賭け金を選んで勝負できます。`);
+  renderAll();
+  focusPanel(els.shopPanel);
+}
+
+function minigamePlayer() {
+  if (!state.minigame) return null;
+  return state.players.find((player) => player.id === state.minigame.playerId) || currentPlayer();
+}
+
+function playMinigame(bet) {
+  const player = minigamePlayer();
+  if (!player || state.phase !== "minigame") return;
+  if (!requirePlayerControl(player)) return;
+  if (state.minigame?.result) return;
+  const wager = Math.min(Number(bet) || 0, player.money);
+  if (wager <= 0) {
+    addLog("賭け金が足りません。");
+    return;
+  }
+  const result = state.minigame.type === "chinchiro" ? resolveChinchiro(wager) : resolvePoker(wager);
+  player.money = Math.max(0, player.money + result.delta);
+  state.minigame.result = result;
+  addLog(`${player.name} は${result.label}。${result.delta >= 0 ? `${result.delta}G獲得` : `${Math.abs(result.delta)}G損失`}。`);
+  renderAll();
+  markChanged();
+}
+
+function finishMinigame() {
+  const player = minigamePlayer();
+  if (!player || state.phase !== "minigame") return;
+  if (!requirePlayerControl(player)) return;
+  state.phase = "turn";
+  state.minigame = null;
+  finishAction();
+  renderAll();
+}
+
+function resolveChinchiro(wager) {
+  const dice = [rand(1, 6), rand(1, 6), rand(1, 6)].sort((a, b) => a - b);
+  const allSame = dice[0] === dice[2];
+  const pair = dice[0] === dice[1] || dice[1] === dice[2];
+  if (allSame) return { label: `チンチロ ${dice.join("-")} ゾロ目`, delta: wager * 3, rolls: dice };
+  if (dice.join("") === "123") return { label: `チンチロ ${dice.join("-")} ヒフミ`, delta: -wager * 2, rolls: dice };
+  if (dice.join("") === "456") return { label: `チンチロ ${dice.join("-")} シゴロ`, delta: wager * 2, rolls: dice };
+  if (pair) return { label: `チンチロ ${dice.join("-")} 役あり`, delta: wager, rolls: dice };
+  return { label: `チンチロ ${dice.join("-")} 目なし`, delta: -wager, rolls: dice };
+}
+
+function resolvePoker(wager) {
+  const cards = Array.from({ length: 5 }, () => rand(1, 13));
+  const counts = Object.values(cards.reduce((map, card) => ({ ...map, [card]: (map[card] || 0) + 1 }), {})).sort((a, b) => b - a);
+  if (counts[0] === 4) return { label: `ポーカー ${cards.join(",")} フォーカード`, delta: wager * 4, cards };
+  if (counts[0] === 3 && counts[1] === 2) return { label: `ポーカー ${cards.join(",")} フルハウス`, delta: wager * 3, cards };
+  if (counts[0] === 3) return { label: `ポーカー ${cards.join(",")} スリーカード`, delta: wager * 2, cards };
+  if (counts[0] === 2 && counts[1] === 2) return { label: `ポーカー ${cards.join(",")} ツーペア`, delta: wager, cards };
+  if (counts[0] === 2) return { label: `ポーカー ${cards.join(",")} ワンペア`, delta: Math.floor(wager * 0.5), cards };
+  return { label: `ポーカー ${cards.join(",")} ノーペア`, delta: -wager, cards };
 }
 
 function openShop(player) {
@@ -1528,8 +1790,8 @@ function buySpecialDice(uidValue) {
   normalizeSpecialDice(player);
   player.specialDice.push(die);
   state.pendingShopDice.splice(index, 1);
-  addLog(`${player.name} は ${info.name} を ${price}G で購入しました。`);
   renderAll();
+  markChanged();
 }
 
 function rerollShop() {
@@ -1569,7 +1831,7 @@ function canUsePersonalShop(player) {
 function buyPersonalShopItem(uidValue) {
   const player = personalShopPlayer();
   if (!player || !canUsePersonalShop(player)) return;
-  if (!Array.isArray(player.personalShop) || !player.personalShop.length) refreshPersonalShop(player);
+  if (!Array.isArray(player.personalShop) || !player.personalShop.length) return;
   const index = player.personalShop.findIndex((item) => item.uid === uidValue);
   if (index < 0) return;
   const item = player.personalShop[index];
@@ -1584,8 +1846,8 @@ function buyPersonalShopItem(uidValue) {
   player.stash.push(item);
   queueItemGain(player, [item]);
   player.personalShop.splice(index, 1);
-  addLog(`${player.name} は常設ショップで ${catalog.name} を ${price}G で購入しました。`);
   renderAll();
+  markChanged();
 }
 
 function buyShopItem(uidValue) {
@@ -1606,8 +1868,8 @@ function buyShopItem(uidValue) {
   player.stash.push(item);
   queueItemGain(player, [item]);
   state.pendingShop.splice(index, 1);
-  addLog(`${player.name} は ${catalog.name} を ${price}G で購入しました。`);
   renderAll();
+  markChanged();
 }
 
 function buyBackpackExpansion() {
@@ -1732,6 +1994,7 @@ function openCombatChoice(player) {
 
 function startBattle(playerIds, isFinal, title) {
   clearBattleLoops();
+  displayedBattleActionIds = new Set();
   state.phase = "battlePrep";
   const hpMultiplier = playerIds.length >= 3 ? playerIds.length - 1 : 1;
   const participants = playerIds.map((id) => {
@@ -1764,6 +2027,7 @@ function startBattle(playerIds, isFinal, title) {
   };
   state.editorPlayerId = playerIds[0];
   renderAll();
+  focusPanel(els.battlePanel);
   markChanged();
 }
 
@@ -1832,6 +2096,7 @@ function runBattle() {
     });
   });
   renderAll();
+  focusPanel(els.battlePanel);
   markChanged();
   battleTickHandle = window.setInterval(battleTick, 250);
 }
@@ -1954,9 +2219,7 @@ function finishBattle() {
     state.winnerId = winnerPlayer.id;
     addLog(`最終対決の勝者は ${winnerPlayer.name}。ゲーム終了です。`);
   } else {
-    winnerPlayer.money += 90;
-    addRandomItems(winnerPlayer, 2, "green");
-    addSpecialDice(winnerPlayer, weightedChoice([["d12", 40], ["trick", 30], ["gold", 30]]), "戦闘報酬で手に入れました");
+    grantBattleReward(winnerPlayer);
     battle.participants.forEach((fighter) => {
       if (fighter.playerId !== winner.playerId) {
         const player = state.players.find((p) => p.id === fighter.playerId);
@@ -1965,9 +2228,24 @@ function finishBattle() {
       }
     });
     state.phase = "battleResult";
-    addLog(`${winnerPlayer.name} が戦闘に勝利し、90G と報酬アイテムを得ました。`);
   }
   renderAll();
+}
+
+function grantBattleReward(player) {
+  const reward = weightedChoice([["money", 45], ["item", 35], ["dice", 20]]);
+  if (reward === "money") {
+    const amount = rand(45, 75);
+    player.money += amount;
+    addLog(`${player.name} が戦闘に勝利し、報酬として ${amount}G を得ました。`);
+  } else if (reward === "item") {
+    const item = randomItemUpTo("green");
+    player.stash.push(item);
+    queueItemGain(player, [item]);
+    addLog(`${player.name} が戦闘に勝利し、報酬として ${itemById(item.itemId).name} を得ました。`);
+  } else {
+    addSpecialDice(player, weightedChoice([["d12", 45], ["trick", 35], ["gold", 20]]), "戦闘報酬で手に入れました");
+  }
 }
 
 function continueAfterBattle() {
@@ -2129,21 +2407,20 @@ function placeSelectedItem(x, y) {
   const placed = player.backpack.find((item) => item.uid === selectedItem);
   if (placed) {
     if (!canPlace(player, placed, x, y, placed.uid)) {
-      addLog("その場所にはアイテムを移動できません。");
-      return;
-    }
-    placed.x = x;
-    placed.y = y;
-    addLog(`${player.name} は ${itemById(placed.itemId).name} をバックパック内で移動しました。`);
-    renderBackpack();
-    markChanged();
+    localNotice("その場所にはアイテムを移動できません。");
     return;
+  }
+  placed.x = x;
+  placed.y = y;
+  renderBackpack();
+  markChanged();
+  return;
   }
   const stashIndex = player.stash.findIndex((item) => item.uid === selectedItem);
   if (stashIndex < 0) return;
   const stashItem = player.stash[stashIndex];
   if (!canPlace(player, stashItem, x, y)) {
-    addLog("その場所にはアイテムを配置できません。");
+    localNotice("その場所にはアイテムを配置できません。");
     return;
   }
   const item = itemById(stashItem.itemId);
@@ -2156,7 +2433,6 @@ function placeSelectedItem(x, y) {
     h: item.h,
   });
   selectedItem = null;
-  addLog(`${player.name} は ${item.name} をバックパックに配置しました。`);
   renderBackpack();
   markChanged();
 }
@@ -2172,7 +2448,6 @@ function removePlacedItem(uidValue) {
   if (index < 0) return;
   const [item] = player.backpack.splice(index, 1);
   player.stash.push({ uid: item.uid, itemId: item.itemId, level: item.level });
-  addLog(`${player.name} は ${itemById(item.itemId).name} を手持ちに戻しました。`);
   renderBackpack();
   markChanged();
 }
@@ -2197,7 +2472,6 @@ function trashSelectedItem() {
     if (!ok) return;
     player.backpack.splice(backpackIndex, 1);
     selectedItem = null;
-    addLog(`${player.name} は ${catalog.name} を捨てました。`);
     renderBackpack();
     markChanged();
     return;
@@ -2208,7 +2482,6 @@ function trashSelectedItem() {
   if (!ok) return;
   player.stash.splice(index, 1);
   selectedItem = null;
-  addLog(`${player.name} は ${catalog.name} を捨てました。`);
   renderBackpack();
   markChanged();
 }
@@ -2232,6 +2505,13 @@ function renderAll() {
   renderLog();
   els.phaseBadge.textContent = phaseLabel();
   els.eventCounter.textContent = `次イベント: 全員${state.nextEventTurn}回行動後`;
+}
+
+function focusPanel(panel) {
+  if (!panel || state.phase === "setup") return;
+  window.setTimeout(() => {
+    panel.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+  }, 80);
 }
 
 function renderOnline() {
@@ -2671,6 +2951,29 @@ function renderTurn() {
     return;
   }
 
+  if (state.phase === "sales") {
+    els.turnTitle.textContent = `${player.name} の営業`;
+    return;
+  }
+
+  if (state.phase === "branchChoice") {
+    const pending = state.pendingBranchChoice;
+    const branchPlayer = pending ? state.players.find((entry) => entry.id === pending.playerId) : player;
+    els.turnTitle.textContent = `${branchPlayer?.name || "プレイヤー"} の分岐選択`;
+    const row = document.createElement("div");
+    row.className = "action-row branch-choice-actions";
+    row.append(actionButton("本線へ進む", "secondary-button", () => chooseBranchRoute("main"), !branchPlayer || !canControlPlayer(branchPlayer) || isAnimatingMove));
+    row.append(actionButton("分岐へ進む", "primary-button", () => chooseBranchRoute("branch"), !branchPlayer || !canControlPlayer(branchPlayer) || isAnimatingMove));
+    els.actionArea.append(row);
+    return;
+  }
+
+  if (state.phase === "minigame") {
+    const gamePlayer = minigamePlayer();
+    els.turnTitle.textContent = `${gamePlayer?.name || "プレイヤー"} のミニゲーム`;
+    return;
+  }
+
   if (state.phase === "battlePrep") {
     const ids = battleParticipantIds();
     const readyCount = ids.filter((id) => state.battle?.ready?.[id]).length;
@@ -2902,7 +3205,10 @@ function renderBackpack() {
         });
       } else {
         cell.disabled = !editable;
-        cell.addEventListener("click", () => placeSelectedItem(x, y));
+        cell.addEventListener("click", () => {
+          if (selectedBackpackItem(player)) return;
+          placeSelectedItem(x, y);
+        });
       }
       els.backpackGrid.append(cell);
     }
@@ -2922,9 +3228,7 @@ function renderBackpack() {
     `;
     tile.draggable = editable;
     tile.addEventListener("click", () => {
-      selectedItem = selectedItem === entry.uid ? null : entry.uid;
-      showItemDetail(entry, item);
-      renderBackpack();
+      handlePlacedItemTap(entry, item);
     });
     tile.addEventListener("dragstart", (event) => {
       if (!editable) return;
@@ -2945,7 +3249,7 @@ function renderBackpack() {
       if (!editable || event.pointerType === "mouse") return;
       selectedItem = entry.uid;
       dragSource = "backpack";
-      touchDrag = { uid: entry.uid, pointerId: event.pointerId, element: tile };
+      touchDrag = { uid: entry.uid, pointerId: event.pointerId, element: tile, moved: false };
       tile.setPointerCapture?.(event.pointerId);
       tile.classList.add("touch-dragging");
       showItemDetail(entry, item);
@@ -2954,16 +3258,21 @@ function renderBackpack() {
       if (!touchDrag || touchDrag.uid !== entry.uid) return;
       autoScrollDuringDrag(event.clientY);
       const cell = cellFromPoint(event.clientX, event.clientY);
-      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      if (cell) {
+        touchDrag.moved = true;
+        setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      }
     });
     tile.addEventListener("pointerup", (event) => {
       if (!touchDrag || touchDrag.uid !== entry.uid) return;
       const cell = cellFromPoint(event.clientX, event.clientY);
+      const shouldMove = touchDrag.moved;
       tile.releasePointerCapture?.(event.pointerId);
       tile.classList.remove("touch-dragging");
       touchDrag = null;
       dragSource = null;
-      placeFromCell(cell);
+      if (shouldMove) placeFromCell(cell);
+      else clearPlacementPreview();
     });
     tile.addEventListener("pointercancel", () => {
       tile.classList.remove("touch-dragging");
@@ -2975,7 +3284,7 @@ function renderBackpack() {
       if (!editable || touchDrag) return;
       selectedItem = entry.uid;
       dragSource = "backpack";
-      touchDrag = { uid: entry.uid, touch: true, element: tile };
+      touchDrag = { uid: entry.uid, touch: true, element: tile, moved: false };
       tile.classList.add("touch-dragging");
       showItemDetail(entry, item);
       event.preventDefault();
@@ -2986,17 +3295,25 @@ function renderBackpack() {
       if (!touch) return;
       autoScrollDuringDrag(touch.clientY);
       const cell = cellFromPoint(touch.clientX, touch.clientY);
-      if (cell) setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      if (cell) {
+        touchDrag.moved = true;
+        setPlacementPreview(Number(cell.dataset.x), Number(cell.dataset.y));
+      }
       event.preventDefault();
     }, { passive: false });
     tile.addEventListener("touchend", (event) => {
       if (!touchDrag || touchDrag.uid !== entry.uid) return;
       const touch = event.changedTouches[0];
       const cell = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
+      const shouldMove = touchDrag.moved;
       tile.classList.remove("touch-dragging");
       touchDrag = null;
       dragSource = null;
-      placeFromCell(cell);
+      if (shouldMove) placeFromCell(cell);
+      else {
+        clearPlacementPreview();
+        handlePlacedItemTap(entry, item);
+      }
       event.preventDefault();
     }, { passive: false });
     tile.addEventListener("touchcancel", () => {
@@ -3028,6 +3345,19 @@ function renderItemCard(stashItem, item) {
   return card;
 }
 
+function handlePlacedItemTap(entry, item) {
+  const now = Date.now();
+  if (lastBackpackTap.uid === entry.uid && now - lastBackpackTap.at < 520) {
+    lastBackpackTap = { uid: null, at: 0 };
+    removePlacedItem(entry.uid);
+    return;
+  }
+  lastBackpackTap = { uid: entry.uid, at: now };
+  selectedItem = entry.uid;
+  showItemDetail(entry, item);
+  renderBackpack();
+}
+
 function shortEffect(item) {
   if (item.damage) return `攻撃 ${item.damage}`;
   if (item.heal) return `回復 ${item.heal}`;
@@ -3039,14 +3369,15 @@ function shortEffect(item) {
 
 function itemTimingText(item) {
   const parts = [];
-  if (item.damage || item.poison) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに攻撃`);
-  if (item.heal) parts.push(`戦闘中 ${((item.interval || 3500) / 1000).toFixed(1)}秒ごとに回復`);
-  if (item.income) parts.push("自分の行動ターン開始時に収入");
-  if (item.shield) parts.push("戦闘開始時に盾を獲得");
-  if (item.boost) parts.push("配置中、隣接攻撃アイテムを常時強化");
-  if (item.boostAll) parts.push("配置中、攻撃アイテム全体を常時強化");
-  if (item.weaken) parts.push("戦闘中、相手全体の攻撃力を常時低下");
-  if (item.healOnHit) parts.push("攻撃命中時に回復");
+  if (item.damage) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに攻撃力${item.damage}`);
+  if (item.poison) parts.push(`戦闘中 ${((item.interval || 2500) / 1000).toFixed(1)}秒ごとに毒攻撃${item.poison}`);
+  if (item.heal) parts.push(`戦闘中 ${((item.interval || 3500) / 1000).toFixed(1)}秒ごとにHP${item.heal}回復`);
+  if (item.income) parts.push(`自分の行動ターン開始時に${item.income}G収入`);
+  if (item.shield) parts.push(`戦闘開始時に盾${item.shield}獲得`);
+  if (item.boost) parts.push(`配置中、隣接攻撃アイテムを${Math.round(item.boost * 100)}%強化`);
+  if (item.boostAll) parts.push(`配置中、攻撃アイテム全体を${Math.round(item.boostAll * 100)}%強化`);
+  if (item.weaken) parts.push(`戦闘中、相手全体の攻撃力を${Math.round(item.weaken * 100)}%低下`);
+  if (item.healOnHit) parts.push(`攻撃命中時にHP${item.healOnHit}回復`);
   return parts.join(" / ") || "配置中に効果発動";
 }
 
@@ -3067,9 +3398,9 @@ function shopCardHtml(item, extra = "") {
 }
 
 function renderShop() {
-  const forcedPanel = ["shop", "forge"].includes(state.phase) && (!online.enabled || canControlPlayer(currentPlayer()));
+  const forcedPanel = ["shop", "forge", "sales", "minigame"].includes(state.phase) && (!online.enabled || canControlPlayer(state.phase === "minigame" ? minigamePlayer() : currentPlayer()));
   const mode = forcedPanel ? state.phase : "personal";
-  const player = forcedPanel ? currentPlayer() : personalShopPlayer();
+  const player = forcedPanel ? (mode === "minigame" ? minigamePlayer() : currentPlayer()) : personalShopPlayer();
   const visible =
     Boolean(player) &&
     !["setup", "order", "gameover"].includes(state.phase) &&
@@ -3131,6 +3462,45 @@ function renderShop() {
       heading.textContent = "手持ち売却";
       els.shopContent.append(heading, sellGrid);
     }
+  } else if (mode === "sales") {
+    els.shopTitle.textContent = "営業";
+    const options = state.salesOptions
+      .map((id) => salesChoiceCatalog.find((entry) => entry.id === id))
+      .filter(Boolean);
+    const grid = document.createElement("div");
+    grid.className = "shop-grid sales-grid";
+    options.forEach((option) => {
+      const card = document.createElement("div");
+      card.className = "shop-item sales-item";
+      card.innerHTML = `<h3>${escapeHtml(option.name)}</h3><p>${escapeHtml(option.description)}</p>`;
+      card.append(actionButton("選択", "secondary-button", () => chooseSalesOption(option.id), !canControlPlayer(player)));
+      grid.append(card);
+    });
+    els.shopContent.append(grid);
+  } else if (mode === "minigame") {
+    const gameType = state.minigame?.type || "chinchiro";
+    els.shopTitle.textContent = gameType === "chinchiro" ? "チンチロ" : "ポーカー";
+    const intro = document.createElement("div");
+    intro.className = "message-box";
+    intro.textContent = gameType === "chinchiro"
+      ? "賭け金を選んで3つのサイコロを振ります。ゾロ目やシゴロで大勝ち、ヒフミは大損です。"
+      : "賭け金を選んで5枚のカードで勝負します。ペア以上で配当が出ます。";
+    els.shopContent.append(intro);
+    if (state.minigame?.result) {
+      const resultBox = document.createElement("div");
+      resultBox.className = "message-box minigame-result";
+      const delta = state.minigame.result.delta;
+      resultBox.textContent = `${state.minigame.result.label} / ${delta >= 0 ? `${delta}G獲得` : `${Math.abs(delta)}G損失`}`;
+      els.shopContent.append(resultBox);
+      els.shopContent.append(actionButton("結果を確認して次へ", "primary-button", finishMinigame, !canControlPlayer(player)));
+    } else {
+      const row = document.createElement("div");
+      row.className = "action-row minigame-bets";
+      [20, 50, 100].forEach((bet) => {
+        row.append(actionButton(`${bet}G賭ける`, "secondary-button", () => playMinigame(bet), !canControlPlayer(player) || player.money < bet));
+      });
+      els.shopContent.append(row);
+    }
   } else if (mode === "forge") {
     els.shopTitle.textContent = "鍛造";
     const synthGrid = document.createElement("div");
@@ -3165,7 +3535,7 @@ function renderShop() {
     els.shopContent.append(actionButton(`選択した2個を合成 (${selectedSynthesis.length}/2)`, "secondary-button", synthesizeItems, selectedSynthesis.length !== 2 || !canControlPlayer(player)));
   } else {
     els.shopTitle.textContent = "ショップ";
-    if (!Array.isArray(player.personalShop) || !player.personalShop.length) refreshPersonalShop(player);
+    if (!Array.isArray(player.personalShop)) player.personalShop = [];
     els.shopContent.append(actionButton(player.personalShopRerolled ? "リロール済み" : "25Gでリロール", "secondary-button", rerollShop, player.personalShopRerolled || player.money < 25 || !canUsePersonalShop(player)));
     const grid = document.createElement("div");
     grid.className = "shop-grid";
@@ -3178,7 +3548,14 @@ function renderShop() {
       card.append(actionButton(`${price}Gで購入`, "secondary-button", () => buyPersonalShopItem(shopItem.uid), !canUsePersonalShop(player)));
       grid.append(card);
     });
-    els.shopContent.append(grid);
+    if (player.personalShop.length) {
+      els.shopContent.append(grid);
+    } else {
+      const soldOut = document.createElement("div");
+      soldOut.className = "message-box";
+      soldOut.textContent = "商品は売り切れです。次の自分の行動ターン、またはリロールで更新されます。";
+      els.shopContent.append(soldOut);
+    }
   }
 }
 
@@ -3245,6 +3622,8 @@ function renderBattle() {
       ${actorEffect ? `<div class="battle-pop action-pop" style="animation-delay:-${Math.min(actorEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(actorEffect.label)}</div>` : ""}
       <div class="battle-items">${renderBattleItems(player, fighter)}</div>
     `;
+    markBattleActionDisplayed(targetEffect, "target", player.id);
+    markBattleActionDisplayed(actorEffect, "actor", player.id);
     els.battleArena.append(row);
   });
 
