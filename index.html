@@ -1,26 +1,26 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>豁ｻ縺ｯ謨第ｸ医☆縺斐ｍ縺・莠ｺ逕溽ｵゆｺ・ご繝ｼ繝-</title>
+    <title>死は救済すごろく-人生終了ゲーム-</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">2縲・莠ｺ / 繧ｪ繝ｳ繝ｩ繧､繝ｳ蟇ｾ謌ｦ</p>
-          <h1>豁ｻ縺ｯ謨第ｸ医☆縺斐ｍ縺・莠ｺ逕溽ｵゆｺ・ご繝ｼ繝-</h1>
+          <p class="eyebrow">2〜4人 / オンライン対戦</p>
+          <h1>死は救済すごろく-人生終了ゲーム-</h1>
         </div>
         <div class="top-actions">
-          <button class="icon-button" id="saveButton" type="button" title="菫晏ｭ・>
+          <button class="icon-button" id="saveButton" type="button" title="保存">
             <span aria-hidden="true">S</span>
           </button>
-          <button class="icon-button" id="loadButton" type="button" title="隱ｭ縺ｿ霎ｼ縺ｿ">
+          <button class="icon-button" id="loadButton" type="button" title="読み込み">
             <span aria-hidden="true">L</span>
           </button>
-          <button class="icon-button danger" id="resetButton" type="button" title="譛蛻昴°繧・>
+          <button class="icon-button danger" id="resetButton" type="button" title="最初から">
             <span aria-hidden="true">R</span>
           </button>
         </div>
@@ -31,12 +31,12 @@
           <div class="board-header">
             <div>
               <p class="eyebrow">Sugoroku Map</p>
-              <h2>繝槭ャ繝・/h2>
+              <h2>マップ</h2>
             </div>
-            <div class="round-pill" id="phaseBadge">貅門ｙ荳ｭ</div>
+            <div class="round-pill" id="phaseBadge">準備中</div>
           </div>
           <div class="board-wrap">
-            <div class="board-grid" id="boardGrid" aria-label="縺吶＃繧阪￥繝槭ャ繝・></div>
+            <div class="board-grid" id="boardGrid" aria-label="すごろくマップ"></div>
           </div>
           <div class="legend" id="legend"></div>
         </section>
@@ -46,59 +46,59 @@
             <div class="panel-title-row">
               <div>
                 <p class="eyebrow">Online</p>
-                <h2>繧ｪ繝ｳ繝ｩ繧､繝ｳ驛ｨ螻・/h2>
+                <h2>オンライン部屋</h2>
               </div>
-              <div class="round-pill" id="onlineStatus">譛ｪ謗･邯・/div>
+              <div class="round-pill" id="onlineStatus">未接続</div>
             </div>
-            <textarea id="firebaseConfigInput" rows="5" spellcheck="false" placeholder='Firebase 縺ｮ Web 險ｭ螳壹ｒ雋ｼ繧贋ｻ倥￠縺ｾ縺吶ゆｾ・ {"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
+            <textarea id="firebaseConfigInput" rows="5" spellcheck="false" placeholder='Firebase の Web 設定を貼り付けます。例: {"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
             <div class="online-grid">
-              <button class="primary-button" id="createRoomButton" type="button">驛ｨ螻九ｒ菴懊ｋ</button>
+              <button class="primary-button" id="createRoomButton" type="button">部屋を作る</button>
               <input id="roomCodeInput" inputmode="numeric" maxlength="4" placeholder="0000" />
-              <button class="secondary-button" id="joinRoomButton" type="button">驛ｨ螻九↓蜈･繧・/button>
+              <button class="secondary-button" id="joinRoomButton" type="button">部屋に入る</button>
             </div>
             <div class="online-grid compact">
-              <select id="seatSelect" aria-label="縺薙・遶ｯ譛ｫ縺ｮ諡・ｽ薙・繝ｬ繧､繝､繝ｼ">
-                <option value="">隕ｳ謌ｦ</option>
-                <option value="1">P1諡・ｽ・/option>
-                <option value="2">P2諡・ｽ・/option>
-                <option value="3">P3諡・ｽ・/option>
-                <option value="4">P4諡・ｽ・/option>
+              <select id="seatSelect" aria-label="この端末の担当プレイヤー">
+                <option value="">観戦</option>
+                <option value="1">P1担当</option>
+                <option value="2">P2担当</option>
+                <option value="3">P3担当</option>
+                <option value="4">P4担当</option>
               </select>
-              <button class="small-button" id="leaveRoomButton" type="button">騾蜃ｺ</button>
+              <button class="small-button" id="leaveRoomButton" type="button">退出</button>
               <button class="small-button danger" id="deleteAllRoomsButton" type="button">部屋全削除</button>
             </div>
-            <div class="message-box" id="onlineHelp">Firebase 險ｭ螳壹・逋ｻ骭ｲ貂医∩縺ｧ縺吶るΚ螻九ｒ菴懊ｋ縺ｨ縲∽ｻ也ｫｯ譛ｫ縺ｯ蜷後§繧ｵ繧､繝医→驛ｨ螻九さ繝ｼ繝峨〒蜿ょ刈縺ｧ縺阪∪縺吶・/div>
+            <div class="message-box" id="onlineHelp">Firebase 設定は登録済みです。部屋を作ると、他端末は同じサイトと部屋コードで参加できます。</div>
           </section>
 
           <section class="panel setup-panel" id="setupPanel">
             <p class="eyebrow">Game Setup</p>
-            <h2>繝励Ξ繧､繝､繝ｼ險ｭ螳・/h2>
-            <div class="segmented" id="playerCountGroup" role="group" aria-label="繝励Ξ繧､繝､繝ｼ莠ｺ謨ｰ">
-              <button type="button" data-count="2">2莠ｺ</button>
-              <button type="button" data-count="3" class="active">3莠ｺ</button>
-              <button type="button" data-count="4">4莠ｺ</button>
+            <h2>プレイヤー設定</h2>
+            <div class="segmented" id="playerCountGroup" role="group" aria-label="プレイヤー人数">
+              <button type="button" data-count="2">2人</button>
+              <button type="button" data-count="3" class="active">3人</button>
+              <button type="button" data-count="4">4人</button>
             </div>
             <label class="range-field">
-              <span>繝槭せ謨ｰ <strong id="boardSizeValue">40</strong></span>
+              <span>マス数 <strong id="boardSizeValue">40</strong></span>
               <input id="boardSizeInput" type="range" min="24" max="200" step="2" value="40" />
             </label>
             <div class="name-fields" id="nameFields"></div>
-            <button class="primary-button" id="startGameButton" type="button">鬆・分豎ｺ螳壹∈</button>
+            <button class="primary-button" id="startGameButton" type="button">順番決定へ</button>
           </section>
 
           <section class="panel status-panel" id="statusPanel">
             <div class="panel-title-row">
               <div>
                 <p class="eyebrow">Players</p>
-                <h2>繝励Ξ繧､繝､繝ｼ</h2>
+                <h2>プレイヤー</h2>
               </div>
-              <div class="round-pill" id="eventCounter">繧､繝吶Φ繝・ 2蜻ｨ縺斐→</div>
+              <div class="round-pill" id="eventCounter">イベント待ち</div>
             </div>
             <div class="players-list" id="playersList"></div>
             <div class="turn-inline" id="turnPanel">
               <div>
                 <p class="eyebrow">Turn</p>
-                <h2 id="turnTitle">蠕・ｩ滉ｸｭ</h2>
+                <h2 id="turnTitle">待機中</h2>
               </div>
               <div class="dice-face" id="diceFace">?</div>
               <div class="action-area" id="actionArea"></div>
@@ -109,23 +109,23 @@
             <div class="panel-title-row">
               <div>
                 <p class="eyebrow">Backpack</p>
-                <h2>繝舌ャ繧ｯ繝代ャ繧ｯ</h2>
+                <h2>バックパック</h2>
               </div>
-              <select id="editorSelect" aria-label="邱ｨ髮・☆繧九・繝ｬ繧､繝､繝ｼ"></select>
-              <div class="stash-limit-note">謇区戟縺｡繧｢繧､繝・Β縺ｯ3縺､縺ｾ縺ｧ</div>
+              <select id="editorSelect" aria-label="編集するプレイヤー"></select>
+              <div class="stash-limit-note">手持ちアイテムは3つまで</div>
             </div>
             <div class="edit-lock" id="editLock"></div>
             <div class="stash" id="stashList"></div>
-            <button class="trash-zone" id="trashZone" type="button">卵・・繧ｴ繝溽ｮｱ</button>
+            <button class="trash-zone" id="trashZone" type="button">ゴミ箱</button>
             <div class="backpack-grid" id="backpackGrid"></div>
-            <div class="item-detail" id="itemDetail">繧｢繧､繝・Β繧帝∈謚槭☆繧九→隧ｳ邏ｰ縺瑚｡ｨ遉ｺ縺輔ｌ縺ｾ縺吶・/div>
+            <div class="item-detail" id="itemDetail">アイテムを選択すると詳細が表示されます。</div>
           </section>
         </section>
 
         <section class="side-column">
           <section class="panel shop-panel" id="shopPanel">
             <p class="eyebrow">Market / Forge</p>
-            <h2 id="shopTitle">繧ｷ繝ｧ繝・・</h2>
+            <h2 id="shopTitle">ショップ</h2>
             <div id="shopContent" class="shop-content"></div>
           </section>
 
@@ -133,9 +133,9 @@
             <div class="panel-title-row">
               <div>
                 <p class="eyebrow">Battle</p>
-                <h2>謌ｦ髣・/h2>
+                <h2>戦闘</h2>
               </div>
-              <div class="round-pill" id="battleTimer">蠕・ｩ・/div>
+              <div class="round-pill" id="battleTimer">待機</div>
             </div>
             <div id="battleArena" class="battle-arena"></div>
           </section>
@@ -144,9 +144,9 @@
             <div class="panel-title-row">
               <div>
                 <p class="eyebrow">History</p>
-                <h2>繝ｭ繧ｰ</h2>
+                <h2>ログ</h2>
               </div>
-              <button class="small-button" id="clearLogButton" type="button">豸亥悉</button>
+              <button class="small-button" id="clearLogButton" type="button">消去</button>
             </div>
             <div class="log-list" id="logList" aria-live="polite"></div>
           </section>

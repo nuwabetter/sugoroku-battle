@@ -1155,7 +1155,7 @@ textarea {
 }
 
 .grid-cell.preview-anchor::before {
-  content: "鄂ｮ縺・;
+  content: "配置";
   position: absolute;
   inset: auto 4px 4px;
   border-radius: 999px;
