@@ -3,7 +3,6 @@
 const DEFAULT_BOARD_SIZE = 40;
 const MIN_BOARD_SIZE = 24;
 const MAX_BOARD_SIZE = 200;
-const SAVE_KEY = "sugoroku-backpack-battle-save";
 const ONLINE_CONFIG_KEY = "sugoroku-firebase-config";
 const ONLINE_SEAT_KEY = "sugoroku-online-seat";
 const FIREBASE_SDK_VERSION = "10.12.5";
@@ -20,11 +19,11 @@ const DEFAULT_FIREBASE_CONFIG = {
 
 const rarityOrder = ["white", "green", "blue", "purple", "gold"];
 const rarityNames = {
-  white: "白",
-  green: "緑",
-  blue: "青",
-  purple: "紫",
-  gold: "金",
+  white: "コモン",
+  green: "アンコモン",
+  blue: "レア",
+  purple: "エピック",
+  gold: "レジェンダリー",
 };
 
 const rarityWeights = {
@@ -85,7 +84,7 @@ const itemCatalog = [
     h: 1,
     price: 30,
     sell: 11,
-    shield: 5,
+    shield: 10,
     description: "戦闘開始時にシールドを得る。",
   },
   {
@@ -98,7 +97,7 @@ const itemCatalog = [
     price: 32,
     sell: 12,
     income: 6,
-    shield: 2,
+    shield: 5,
     description: "少しお金とシールドを得る小さなお守り。",
   },
   {
@@ -123,7 +122,7 @@ const itemCatalog = [
     h: 2,
     price: 60,
     sell: 24,
-    shield: 10,
+    shield: 18,
     description: "戦闘開始時にまとまったシールドを得る。",
   },
   {
@@ -213,7 +212,7 @@ const itemCatalog = [
     price: 112,
     sell: 48,
     income: 25,
-    shield: 6,
+    shield: 12,
     description: "ターン開始時のお金と戦闘開始時シールドを得る。",
   },
   {
@@ -226,7 +225,7 @@ const itemCatalog = [
     price: 120,
     sell: 54,
     heal: 4,
-    shield: 8,
+    shield: 15,
     interval: 4200,
     description: "戦闘中に回復し、開始時シールドも得る。",
   },
@@ -235,7 +234,7 @@ const itemCatalog = [
     name: "嵐の杖",
     rarity: "purple",
     type: "attack",
-    w: 1,
+    w: 2,
     h: 3,
     price: 175,
     sell: 82,
@@ -306,7 +305,7 @@ const itemCatalog = [
     price: 330,
     sell: 160,
     heal: 11,
-    shield: 18,
+    shield: 30,
     interval: 3600,
     description: "強力な回復とシールドで粘り強く戦う。",
   },
@@ -320,8 +319,64 @@ const itemCatalog = [
     price: 360,
     sell: 170,
     boostAll: 0.16,
-    shield: 20,
+    shield: 34,
     description: "全攻撃を大きく強化し、戦闘開始時シールドを得る。",
+  },
+  {
+    id: "frost_clock",
+    name: "凍結時計",
+    rarity: "blue",
+    type: "debuff",
+    w: 2,
+    h: 1,
+    price: 125,
+    sell: 55,
+    damage: 4,
+    freeze: 1200,
+    interval: 3300,
+    description: "攻撃時に凍結を付与し、相手のアイテム発動を遅らせる。",
+  },
+  {
+    id: "rust_mist",
+    name: "腐食ミスト",
+    rarity: "green",
+    type: "debuff",
+    w: 1,
+    h: 2,
+    price: 76,
+    sell: 31,
+    poison: 2,
+    corrosion: 4200,
+    interval: 3100,
+    description: "毒攻撃と腐食で、相手の回復効果を弱める。",
+  },
+  {
+    id: "l_guard_plate",
+    name: "L字防壁",
+    rarity: "purple",
+    type: "defense",
+    w: 2,
+    h: 2,
+    shape: [[0, 0], [0, 1], [1, 1]],
+    price: 180,
+    sell: 82,
+    shield: 32,
+    description: "L字に配置する防壁。戦闘開始時に大きなシールドを得る。",
+  },
+  {
+    id: "crooked_blade",
+    name: "曲刃の鎌",
+    rarity: "blue",
+    type: "attack",
+    w: 2,
+    h: 2,
+    shape: [[0, 0], [1, 0], [1, 1]],
+    price: 128,
+    sell: 58,
+    damage: 9,
+    interval: 2600,
+    corrosion: 2600,
+    description: "L字に配置する攻撃アイテム。攻撃時に腐食を付与する。",
   },
 ];
 
@@ -347,6 +402,10 @@ const itemIcons = {
   sun_blade: "☀️",
   phoenix_feather: "🪶",
   dragon_heart: "💎",
+  frost_clock: "🧊",
+  rust_mist: "🧫",
+  l_guard_plate: "🧱",
+  crooked_blade: "🪃",
 };
 
 const boardPattern = [
@@ -404,7 +463,7 @@ const randomSpaceWeights = [
 
 const HAPPENING_CHANCE = 0.08;
 const ITEM_GAIN_EFFECT_MS = 1450;
-const BATTLE_ACTION_EFFECT_MS = 1000;
+const BATTLE_ACTION_EFFECT_MS = 2400;
 const SPECIAL_DICE = {
   d12: {
     id: "d12",
@@ -451,6 +510,8 @@ let lastBackpackTap = { uid: null, at: 0 };
 let suppressPlacedClick = { uid: null, until: 0 };
 let displayedBattleActionIds = new Set();
 let isAnimatingMove = false;
+let audioContext = null;
+let victorySfxPlayed = false;
 let uiEffects = {
   space: null,
   happening: null,
@@ -499,6 +560,7 @@ const els = {
   boardSizeValue: document.getElementById("boardSizeValue"),
   nameFields: document.getElementById("nameFields"),
   startGameButton: document.getElementById("startGameButton"),
+  setupLockMessage: document.getElementById("setupLockMessage"),
   boardWrap: document.querySelector(".board-wrap"),
   boardGrid: document.getElementById("boardGrid"),
   legend: document.getElementById("legend"),
@@ -522,10 +584,6 @@ const els = {
   battleTimer: document.getElementById("battleTimer"),
   battleArena: document.getElementById("battleArena"),
   logList: document.getElementById("logList"),
-  topActions: document.querySelector(".top-actions"),
-  saveButton: document.getElementById("saveButton"),
-  loadButton: document.getElementById("loadButton"),
-  resetButton: document.getElementById("resetButton"),
   clearLogButton: document.getElementById("clearLogButton"),
 };
 
@@ -588,6 +646,55 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function playSfx(type) {
+  const AudioClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioClass) return;
+  audioContext ||= new AudioClass();
+  if (audioContext.state === "suspended") audioContext.resume();
+  const now = audioContext.currentTime;
+  const master = audioContext.createGain();
+  master.gain.setValueAtTime(0.0001, now);
+  master.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  master.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+  master.connect(audioContext.destination);
+
+  const tone = (frequency, start, duration, wave = "square", volume = 0.45, endFrequency = null) => {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    oscillator.type = wave;
+    oscillator.frequency.setValueAtTime(frequency, now + start);
+    if (endFrequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + start + duration);
+    gain.gain.setValueAtTime(0.0001, now + start);
+    gain.gain.exponentialRampToValueAtTime(volume, now + start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
+    oscillator.connect(gain);
+    gain.connect(master);
+    oscillator.start(now + start);
+    oscillator.stop(now + start + duration + 0.03);
+  };
+
+  const patterns = {
+    dice: () => [[330, 0], [420, 0.07], [520, 0.14], [390, 0.22]].forEach(([freq, start]) => tone(freq, start, 0.06, "square", 0.34)),
+    item: () => [[523, 0], [659, 0.08], [784, 0.16]].forEach(([freq, start]) => tone(freq, start, 0.16, "triangle", 0.32)),
+    battle: () => {
+      tone(140, 0, 0.2, "sawtooth", 0.42, 80);
+      tone(220, 0.04, 0.15, "square", 0.24, 130);
+    },
+    damage: () => {
+      tone(180, 0, 0.14, "sawtooth", 0.45, 90);
+      tone(90, 0.06, 0.18, "square", 0.25);
+    },
+    heal: () => [[392, 0], [523, 0.09], [659, 0.18]].forEach(([freq, start]) => tone(freq, start, 0.22, "sine", 0.25)),
+    status: () => {
+      tone(260, 0, 0.16, "triangle", 0.28, 180);
+      tone(740, 0.08, 0.18, "sine", 0.18);
+    },
+    goal: () => [[523, 0], [659, 0.12], [784, 0.24], [1046, 0.4]].forEach(([freq, start]) => tone(freq, start, 0.24, "triangle", 0.36)),
+    victory: () => [[392, 0], [523, 0.14], [659, 0.28], [784, 0.42], [1046, 0.62], [1318, 0.82]].forEach(([freq, start]) => tone(freq, start, 0.32, "triangle", 0.35)),
+  };
+  (patterns[type] || patterns.item)();
+}
+
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -612,7 +719,7 @@ function createBoardPattern(size = DEFAULT_BOARD_SIZE) {
   const board = ["start"];
   for (let index = 1; index < safeSize - 1; index += 1) {
     const weights = index < 14
-      ? randomSpaceWeights.filter(([type]) => type !== "combat" && type !== "forge")
+      ? randomSpaceWeights.filter(([type]) => type !== "forge" && (index >= 9 || type !== "combat"))
       : randomSpaceWeights;
     board.push(weightedChoice(weights));
   }
@@ -662,7 +769,7 @@ function ensureMinimumSpaces(board) {
   };
   Object.entries(minimums).forEach(([type, minimum]) => {
     while (countSpaces(board, type) < minimum) {
-      const index = type === "combat" || type === "forge" ? rand(14, board.length - 2) : rand(1, board.length - 2);
+      const index = type === "forge" ? rand(14, board.length - 2) : type === "combat" ? rand(9, board.length - 2) : rand(1, board.length - 2);
       board[index] = type;
     }
   });
@@ -671,8 +778,8 @@ function ensureMinimumSpaces(board) {
 function sanitizeBoard(board) {
   if (!Array.isArray(board)) return board;
   for (let index = 1; index < Math.min(14, board.length - 1); index += 1) {
-    if (board[index] === "forge" || board[index] === "combat") {
-      board[index] = weightedChoice(randomSpaceWeights.filter(([type]) => type !== "combat" && type !== "forge"));
+    if (board[index] === "forge" || (index < 9 && board[index] === "combat")) {
+      board[index] = weightedChoice(randomSpaceWeights.filter(([type]) => type !== "forge" && (index >= 9 || type !== "combat")));
     }
   }
   return board;
@@ -715,6 +822,7 @@ function activeBranches() {
 
 function queueItemGain(player, items) {
   if (!player || !items?.length) return;
+  playSfx("item");
   const effects = ensureEffects();
   const icons = items.map((item) => itemIcons[item.itemId] || "?").join("");
   effects.itemGains.push({
@@ -775,6 +883,9 @@ function showHappeningEffect(player, key) {
 }
 
 function queueBattleAction(action) {
+  if (action?.type === "damage") playSfx("damage");
+  else if (action?.type === "heal") playSfx("heal");
+  else if (["freeze", "corrosion", "status"].includes(action?.type)) playSfx("status");
   const effects = ensureEffects();
   effects.battleActions.push({
     id: uid(),
@@ -790,7 +901,6 @@ function recentBattleActionFor(playerId, role) {
   const effects = ensureEffects();
   const action = [...effects.battleActions].reverse().find((entry) => {
     if (now - entry.at > BATTLE_ACTION_EFFECT_MS) return false;
-    if (displayedBattleActionIds.has(`${role}:${entry.id}:${playerId}`)) return false;
     if (role === "actor" && entry.type === "damage") return false;
     if (role === "actor") return entry.actorId === playerId;
     if (role === "target") return entry.targetIds?.includes(playerId);
@@ -800,11 +910,9 @@ function recentBattleActionFor(playerId, role) {
 }
 
 function markBattleActionDisplayed(action, role, playerId) {
-  if (!action?.id) return;
-  displayedBattleActionIds.add(`${role}:${action.id}:${playerId}`);
-  if (displayedBattleActionIds.size > 160) {
-    displayedBattleActionIds = new Set([...displayedBattleActionIds].slice(-80));
-  }
+  void action;
+  void role;
+  void playerId;
 }
 
 function normalizeGameState(gameState) {
@@ -1089,7 +1197,7 @@ function localNotice(text) {
 }
 
 function canControlSetup() {
-  return !online.enabled || online.isHost;
+  return online.enabled && online.isHost;
 }
 
 function canEditSetupPlayer(index) {
@@ -1098,8 +1206,7 @@ function canEditSetupPlayer(index) {
 }
 
 function canControlPlayer(player) {
-  if (!online.enabled) return true;
-  return Boolean(player && online.playerId === player.id);
+  return Boolean(online.enabled && player && online.playerId === player.id);
 }
 
 function requireSetupControl() {
@@ -1125,7 +1232,6 @@ function currentPlayer() {
 function init() {
   els.firebaseConfigInput.value = JSON.stringify(DEFAULT_FIREBASE_CONFIG, null, 2);
   if (online.playerId) els.seatSelect.value = String(online.playerId);
-  moveTopActionsBelowLog();
   renderSetup();
   renderBoard();
   renderLegend();
@@ -1134,12 +1240,6 @@ function init() {
   renderTimerHandle = window.setInterval(() => {
     if (state.phase === "battlePrep") renderBattle();
   }, 300);
-}
-
-function moveTopActionsBelowLog() {
-  const logPanel = document.querySelector(".log-panel");
-  if (!logPanel || !els.topActions || logPanel.contains(els.topActions)) return;
-  logPanel.append(els.topActions);
 }
 
 function bindEvents() {
@@ -1214,9 +1314,6 @@ function bindEvents() {
   els.backpackGrid.addEventListener("dragleave", (event) => {
     if (!els.backpackGrid.contains(event.relatedTarget)) clearPlacementPreview();
   });
-  els.saveButton.addEventListener("click", saveGame);
-  els.loadButton.addEventListener("click", loadGame);
-  els.resetButton.addEventListener("click", resetGame);
   els.clearLogButton.addEventListener("click", () => {
     state.log = [];
     markChanged();
@@ -1246,6 +1343,7 @@ function bindEvents() {
 
 function renderSetup() {
   const setupEditable = canControlSetup();
+  els.setupLockMessage?.classList.toggle("hidden", online.enabled);
   [...els.playerCountGroup.querySelectorAll("button")].forEach((button) => {
     button.classList.toggle("active", Number(button.dataset.count) === state.setupCount);
     button.disabled = !setupEditable || online.enabled;
@@ -1265,10 +1363,14 @@ function renderSetup() {
   els.boardSizeInput.disabled = !setupEditable;
   els.boardSizeValue.textContent = `${state.boardSize || DEFAULT_BOARD_SIZE}マス`;
   const joinedCount = online.enabled ? participantCountFromSeats(online.seats) : state.setupCount;
-  els.startGameButton.disabled = !setupEditable || joinedCount < 2;
+  els.startGameButton.disabled = !online.enabled || !setupEditable || joinedCount < 2;
 }
 
 function startOrderPhase() {
+  if (!online.enabled) {
+    localNotice("オンライン部屋を作ってからゲームを開始してください。");
+    return;
+  }
   if (!requireSetupControl()) return;
   const joinedCount = online.enabled ? participantCountFromSeats(online.seats) : state.setupCount;
   if (joinedCount < 2) {
@@ -1283,6 +1385,7 @@ function startOrderPhase() {
   state.orderIndex = 0;
   state.currentIndex = 0;
   state.nextEventTurn = 1;
+  victorySfxPlayed = false;
   state.editorPlayerId = state.players[0].id;
   addLog("ゲーム開始。まずは1〜100ダイスで行動順を決めます。");
   renderAll();
@@ -1291,6 +1394,7 @@ function startOrderPhase() {
 function rollOrderDice() {
   const player = state.players[state.orderIndex];
   if (!requirePlayerControl(player)) return;
+  playSfx("dice");
   const roll = rand(1, 100);
   player.orderRoll = roll;
   els.diceFace.textContent = roll;
@@ -1470,6 +1574,7 @@ async function rollMoveDice(dieUid = null, chosenRoll = null) {
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
   if (isAnimatingMove) return;
+  playSfx("dice");
   normalizeSpecialDice(player);
   const specialDie = dieUid ? player.specialDice.find((die) => die.uid === dieUid) : null;
   const dieInfo = specialDie ? SPECIAL_DICE[specialDie.type] : null;
@@ -1510,8 +1615,8 @@ function resolveSpace(player) {
       player.money += money;
       addLog(`${player.name} は ${money}G を得ました。`);
     } else {
-      const items = addRandomItems(player, rand(1, 2), "white");
-      addLog(`${player.name} は ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
+      addRandomItems(player, rand(1, 2), "white");
+      addLog(`${player.name} はアイテムを得ました。`);
     }
     maybeTriggerHappening(player, type);
     player.position = landedPosition;
@@ -1534,8 +1639,8 @@ function resolveSpace(player) {
   } else if (type === "lucky") {
     const effect = choice(["item", "dash", "discount", "dice"]);
     if (effect === "item") {
-      const items = addRandomItems(player, 2, "green");
-      addLog(`${player.name} は幸運で ${items.map((item) => itemById(item.itemId).name).join("、")} を得ました。`);
+      addRandomItems(player, 2, "green");
+      addLog(`${player.name} は幸運でアイテムを得ました。`);
     } else if (effect === "dash") {
       player.rollBonus += 3;
       addLog(`${player.name} は次の移動ダイスに +3 を得ました。`);
@@ -1555,10 +1660,11 @@ function resolveSpace(player) {
   } else if (type === "combat") {
     openCombatChoice(player);
   } else if (type === "goal") {
+    playSfx("goal");
     const prizes = [randomItem("purple"), randomItem("gold")];
     player.stash.push(...prizes);
     queueItemGain(player, prizes);
-    addLog(`${player.name} がゴールに到達し、${prizes.map((item) => itemById(item.itemId).name).join("、")} を得ました。最終対決へ移行します。`);
+    addLog(`${player.name} がゴールに到達し、強力なアイテムを得ました。最終対決へ移行します。`);
     startBattle(livingPlayers().map((p) => p.id), true, "最終対決");
   } else {
     finishAction();
@@ -1659,6 +1765,7 @@ function openSales(player) {
     .map((option) => option.id);
   addLog(`${player.name} は営業マスで営業先を選びます。`);
   renderAll();
+  focusPanel(els.shopPanel);
 }
 
 function randomItemByFilter(predicate, fallbackMinimum = "white") {
@@ -1717,17 +1824,17 @@ function chooseSalesOption(optionId) {
     const item = randomItem("blue");
     player.stash.push(item);
     queueItemGain(player, [item]);
-    addLog(`${player.name} は美術品にトマト缶を投げ、${loss}G失い ${itemById(item.itemId).name} を得ました。`);
+    addLog(`${player.name} は美術品にトマト缶を投げ、${loss}G失いアイテムを得ました。`);
   } else if (optionId === "vegan") {
     const item = randomItemByFilter((entry) => entry.heal || entry.healOnHit, "green");
     player.stash.push(item);
     queueItemGain(player, [item]);
-    addLog(`${player.name} はヴィーガン活動で ${itemById(item.itemId).name} を得ました。`);
+    addLog(`${player.name} はヴィーガン活動でアイテムを得ました。`);
   } else if (optionId === "draft") {
     const item = randomItemByFilter((entry) => entry.damage || entry.poison, "white");
     player.stash.push(item);
     queueItemGain(player, [item]);
-    addLog(`${player.name} は徴兵で ${itemById(item.itemId).name} を得ました。`);
+    addLog(`${player.name} は徴兵でアイテムを得ました。`);
   }
   state.salesOptions = [];
   state.phase = "turn";
@@ -1743,7 +1850,12 @@ function openMinigame(type) {
     playerIds: participants,
     results: {},
   };
-  addLog(`全体イベント: ${type === "chinchiro" ? "チンチロ" : "ポーカー"}。賭け金を選んで勝負できます。`);
+  if (type === "poker") {
+    const deck = shuffledDeck();
+    state.minigame.community = deck.splice(0, 5);
+    state.minigame.holes = Object.fromEntries(participants.map((id) => [id, deck.splice(0, 2)]));
+  }
+  addLog(`全体イベント: ${type === "chinchiro" ? "チンチロ" : "テキサスポーカー"}。賭け金を選んで勝負できます。`);
   renderAll();
   focusPanel(els.shopPanel);
 }
@@ -1782,11 +1894,12 @@ function playMinigame(bet) {
     addLog("賭け金が足りません。");
     return;
   }
-  const result = state.minigame.type === "chinchiro" ? resolveChinchiro(wager) : resolvePoker(wager);
-  player.money = Math.max(0, player.money + result.delta);
+  player.money = Math.max(0, player.money - wager);
+  const result = state.minigame.type === "chinchiro" ? resolveChinchiro(wager) : resolveTexasHoldem(wager, player.id);
+  result.delta = -wager;
   state.minigame.results = state.minigame.results || {};
   state.minigame.results[player.id] = result;
-  addLog(`${player.name} は${result.label}。${result.delta >= 0 ? `${result.delta}G獲得` : `${Math.abs(result.delta)}G損失`}。`);
+  addLog(`${player.name} はミニゲームに ${wager}G 賭けました。`);
   renderAll();
   markChanged();
 }
@@ -1802,32 +1915,102 @@ function finishMinigame() {
     localNotice("全員のミニゲーム結果が出るまで待ってください。");
     return;
   }
+  settleMinigameResults();
   state.phase = "turn";
   state.minigame = null;
   finishAction();
   renderAll();
 }
 
+function settleMinigameResults() {
+  if (!state.minigame || state.minigame.settled) return;
+  const entries = minigameParticipantIds()
+    .map((id) => ({ player: state.players.find((entry) => entry.id === id), result: minigameResultFor(id) }))
+    .filter((entry) => entry.player && entry.result);
+  if (!entries.length) return;
+  const pot = entries.reduce((sum, entry) => sum + (entry.result.wager || 0), 0);
+  const best = Math.max(...entries.map((entry) => entry.result.score || 0));
+  const winners = entries.filter((entry) => entry.result.score === best);
+  const payout = Math.floor(pot / Math.max(1, winners.length));
+  winners.forEach((entry) => {
+    entry.player.money += payout;
+    entry.result.delta += payout;
+  });
+  state.minigame.settled = true;
+  addLog(`ミニゲーム結果: ${winners.map((entry) => entry.player.name).join("、")} が ${payout}G を獲得しました。`);
+}
+
 function resolveChinchiro(wager) {
   const dice = [rand(1, 6), rand(1, 6), rand(1, 6)].sort((a, b) => a - b);
   const allSame = dice[0] === dice[2];
   const pair = dice[0] === dice[1] || dice[1] === dice[2];
-  if (allSame) return { label: `チンチロ ${dice.join("-")} ゾロ目`, delta: wager * 3, rolls: dice };
-  if (dice.join("") === "123") return { label: `チンチロ ${dice.join("-")} ヒフミ`, delta: -wager * 2, rolls: dice };
-  if (dice.join("") === "456") return { label: `チンチロ ${dice.join("-")} シゴロ`, delta: wager * 2, rolls: dice };
-  if (pair) return { label: `チンチロ ${dice.join("-")} 役あり`, delta: wager, rolls: dice };
-  return { label: `チンチロ ${dice.join("-")} 目なし`, delta: -wager, rolls: dice };
+  if (allSame) return { label: `チンチロ ${dice.join("-")} ゾロ目`, score: 600 + dice[0], wager, rolls: dice };
+  if (dice.join("") === "123") return { label: `チンチロ ${dice.join("-")} ヒフミ`, score: 0, wager, rolls: dice };
+  if (dice.join("") === "456") return { label: `チンチロ ${dice.join("-")} シゴロ`, score: 550, wager, rolls: dice };
+  if (pair) {
+    const single = dice[0] === dice[1] ? dice[2] : dice[0];
+    return { label: `チンチロ ${dice.join("-")} 役あり`, score: 300 + single, wager, rolls: dice };
+  }
+  return { label: `チンチロ ${dice.join("-")} 目なし`, score: 100 + dice.reduce((sum, value) => sum + value, 0), wager, rolls: dice };
 }
 
-function resolvePoker(wager) {
-  const cards = Array.from({ length: 5 }, () => rand(1, 13));
-  const counts = Object.values(cards.reduce((map, card) => ({ ...map, [card]: (map[card] || 0) + 1 }), {})).sort((a, b) => b - a);
-  if (counts[0] === 4) return { label: `ポーカー ${cards.join(",")} フォーカード`, delta: wager * 4, cards };
-  if (counts[0] === 3 && counts[1] === 2) return { label: `ポーカー ${cards.join(",")} フルハウス`, delta: wager * 3, cards };
-  if (counts[0] === 3) return { label: `ポーカー ${cards.join(",")} スリーカード`, delta: wager * 2, cards };
-  if (counts[0] === 2 && counts[1] === 2) return { label: `ポーカー ${cards.join(",")} ツーペア`, delta: wager, cards };
-  if (counts[0] === 2) return { label: `ポーカー ${cards.join(",")} ワンペア`, delta: Math.floor(wager * 0.5), cards };
-  return { label: `ポーカー ${cards.join(",")} ノーペア`, delta: -wager, cards };
+function resolveTexasHoldem(wager, playerId) {
+  const hole = state.minigame?.holes?.[playerId] || shuffledDeck().slice(0, 2);
+  const community = state.minigame?.community || shuffledDeck().slice(0, 5);
+  const hand = evaluatePokerHand([...hole, ...community]);
+  return {
+    label: `テキサス ${hole.map(cardLabel).join(" ")} / ${hand.name}`,
+    score: hand.score,
+    wager,
+    cards: hole,
+  };
+}
+
+function shuffledDeck() {
+  const deck = [];
+  for (let suit = 0; suit < 4; suit += 1) {
+    for (let rank = 2; rank <= 14; rank += 1) deck.push({ rank, suit });
+  }
+  return deck.sort(() => Math.random() - 0.5);
+}
+
+function cardLabel(card) {
+  const ranks = { 11: "J", 12: "Q", 13: "K", 14: "A" };
+  const suits = ["♠", "♥", "♦", "♣"];
+  return `${ranks[card.rank] || card.rank}${suits[card.suit] || ""}`;
+}
+
+function evaluatePokerHand(cards) {
+  const ranks = cards.map((card) => card.rank).sort((a, b) => b - a);
+  const rankCounts = ranks.reduce((map, rank) => ({ ...map, [rank]: (map[rank] || 0) + 1 }), {});
+  const groups = Object.entries(rankCounts)
+    .map(([rank, count]) => ({ rank: Number(rank), count }))
+    .sort((a, b) => b.count - a.count || b.rank - a.rank);
+  const flushSuit = [0, 1, 2, 3].find((suit) => cards.filter((card) => card.suit === suit).length >= 5);
+  const uniqueRanks = [...new Set(ranks)];
+  if (uniqueRanks.includes(14)) uniqueRanks.push(1);
+  const straightHigh = straightHighCard(uniqueRanks);
+  const flushRanks = flushSuit === undefined ? [] : cards.filter((card) => card.suit === flushSuit).map((card) => card.rank);
+  if (flushRanks.includes(14)) flushRanks.push(1);
+  const straightFlushHigh = flushSuit === undefined ? 0 : straightHighCard([...new Set(flushRanks)].sort((a, b) => b - a));
+  if (straightFlushHigh) return { name: "ストレートフラッシュ", score: 800000 + straightFlushHigh };
+  if (groups[0]?.count === 4) return { name: "フォーカード", score: 700000 + groups[0].rank * 100 + (groups[1]?.rank || 0) };
+  if (groups[0]?.count === 3 && groups[1]?.count >= 2) return { name: "フルハウス", score: 600000 + groups[0].rank * 100 + groups[1].rank };
+  if (flushSuit !== undefined) return { name: "フラッシュ", score: 500000 + Math.max(...flushRanks) };
+  if (straightHigh) return { name: "ストレート", score: 400000 + straightHigh };
+  if (groups[0]?.count === 3) return { name: "スリーカード", score: 300000 + groups[0].rank };
+  if (groups[0]?.count === 2 && groups[1]?.count === 2) return { name: "ツーペア", score: 200000 + groups[0].rank * 100 + groups[1].rank };
+  if (groups[0]?.count === 2) return { name: "ワンペア", score: 100000 + groups[0].rank };
+  return { name: "ハイカード", score: Math.max(...ranks) };
+}
+
+function straightHighCard(sortedRanks) {
+  const ranks = [...new Set(sortedRanks)].sort((a, b) => b - a);
+  for (let index = 0; index <= ranks.length - 5; index += 1) {
+    const windowRanks = ranks.slice(index, index + 5);
+    if (windowRanks[0] - windowRanks[4] === 4) return windowRanks[0];
+  }
+  return 0;
 }
 
 function openShop(player) {
@@ -1838,6 +2021,7 @@ function openShop(player) {
   els.shopPanel.classList.remove("hidden");
   addLog(`${player.name} は闇商人マスに入りました。`);
   renderAll();
+  focusPanel(els.shopPanel);
 }
 
 function buySpecialDice(uidValue) {
@@ -1974,6 +2158,7 @@ function openForge(player) {
   forgeMode = "upgrade";
   addLog(`${player.name} は鍛造マスで装備を整えられます。`);
   renderAll();
+  focusPanel(els.shopPanel);
 }
 
 function sellStashItem(uidValue) {
@@ -2040,7 +2225,7 @@ function synthesizeItems() {
   player.stash.push(created);
   selectedSynthesis = [];
   queueItemGain(player, [created]);
-  addLog(`${player.name} は ${rarityNames[rarity]}アイテム2つを合成し、${itemById(created.itemId).name} を得ました。`);
+  addLog(`${player.name} は ${rarityNames[rarity]}アイテム2つを合成し、新しいアイテムを得ました。`);
   renderAll();
 }
 
@@ -2059,10 +2244,13 @@ function toggleSynthesisItem(uidValue) {
 function openCombatChoice(player) {
   state.phase = "combatChoice";
   addLog(`${player.name} は戦闘相手を選びます。`);
+  renderAll();
+  focusPanel(els.statusPanel);
 }
 
 function startBattle(playerIds, isFinal, title) {
   clearBattleLoops();
+  playSfx("battle");
   displayedBattleActionIds = new Set();
   state.phase = "battlePrep";
   const hpMultiplier = playerIds.length >= 3 ? playerIds.length - 1 : 1;
@@ -2082,6 +2270,7 @@ function startBattle(playerIds, isFinal, title) {
       alive: true,
       rank: null,
       cooldowns: {},
+      statuses: {},
       lastTickAt: Date.now(),
     };
   });
@@ -2157,6 +2346,7 @@ function runBattle() {
     player.nextBattlePenalty = 0;
     fighter.lastTickAt = Date.now();
     fighter.cooldowns = {};
+    fighter.statuses = fighter.statuses || {};
     placedItems(player).forEach((entry) => {
       const item = itemById(entry.itemId);
       if (item.damage || item.poison || item.heal) {
@@ -2185,6 +2375,9 @@ function battleTick() {
     const now = Date.now();
     const delta = Math.min(1000, now - (fighter.lastTickAt || now));
     fighter.lastTickAt = now;
+    fighter.statuses = fighter.statuses || {};
+    const frozen = Number(fighter.statuses.freezeUntil || 0) > now;
+    const cooldownDelta = frozen ? 0 : delta;
     const player = state.players.find((p) => p.id === fighter.playerId);
     const placed = placedItems(player);
     const targetPool = battle.participants.filter((target) => target.alive && target.playerId !== player.id);
@@ -2199,7 +2392,7 @@ function battleTick() {
     for (const entry of placed) {
       const item = itemById(entry.itemId);
       const key = entry.uid;
-      fighter.cooldowns[key] = Math.max(0, (fighter.cooldowns[key] ?? item.interval ?? 2500) - delta);
+      fighter.cooldowns[key] = Math.max(0, (fighter.cooldowns[key] ?? item.interval ?? 2500) - cooldownDelta);
       if (fighter.cooldowns[key] > 0) continue;
 
       if (item.damage || item.poison) {
@@ -2210,10 +2403,12 @@ function battleTick() {
           .filter((target) => target.alive)
           .forEach((target) => {
             applyDamage(target, finalDamage, `${player.name} の ${item.name}`, player.id);
+            applyStatusEffects(target, item, player.id);
             settleDefeat(target);
           });
         if (item.healOnHit) {
-          const amount = item.healOnHit + entry.level - 1;
+          const corroded = Number(fighter.statuses.corrosionUntil || 0) > now;
+          const amount = Math.max(1, Math.round((item.healOnHit + entry.level - 1) * (corroded ? 0.55 : 1)));
           fighter.hp = Math.min(fighter.maxHp || 100, fighter.hp + amount);
           queueBattleAction({ type: "heal", actorId: player.id, targetIds: [player.id], label: `+${amount}` });
         }
@@ -2221,7 +2416,8 @@ function battleTick() {
 
       if (item.heal) {
         fighter.cooldowns[key] = Math.max(600, item.interval || 3500);
-        const amount = item.heal + entry.level * 2;
+        const corroded = Number(fighter.statuses.corrosionUntil || 0) > now;
+        const amount = Math.max(1, Math.round((item.heal + entry.level * 2) * (corroded ? 0.55 : 1)));
         fighter.hp = Math.min(fighter.maxHp || 100, fighter.hp + amount);
         battle.feed.unshift(`${player.name} は ${item.name} で ${amount} 回復。`);
         queueBattleAction({ type: "heal", actorId: player.id, targetIds: [player.id], label: `+${amount}` });
@@ -2245,6 +2441,20 @@ function calculateDamage(player, entry, item) {
   const globalBoost = placed.reduce((sum, other) => sum + (itemById(other.itemId).boostAll || 0), 0);
   damage *= 1 + adjacentBoost + globalBoost;
   return damage;
+}
+
+function applyStatusEffects(target, item, actorId = null) {
+  if (!target || !item) return;
+  const now = Date.now();
+  target.statuses = target.statuses || {};
+  if (item.freeze) {
+    target.statuses.freezeUntil = Math.max(target.statuses.freezeUntil || 0, now + item.freeze);
+    queueBattleAction({ type: "freeze", actorId, targetIds: [target.playerId], label: "凍結" });
+  }
+  if (item.corrosion) {
+    target.statuses.corrosionUntil = Math.max(target.statuses.corrosionUntil || 0, now + item.corrosion);
+    queueBattleAction({ type: "corrosion", actorId, targetIds: [target.playerId], label: "腐食" });
+  }
 }
 
 function areAdjacent(a, b) {
@@ -2299,6 +2509,7 @@ function finishBattle() {
     state.phase = "battleResult";
   }
   renderAll();
+  focusPanel(els.battlePanel);
 }
 
 function grantBattleReward(player) {
@@ -2311,7 +2522,7 @@ function grantBattleReward(player) {
     const item = randomItemUpTo("green");
     player.stash.push(item);
     queueItemGain(player, [item]);
-    addLog(`${player.name} が戦闘に勝利し、報酬として ${itemById(item.itemId).name} を得ました。`);
+    addLog(`${player.name} が戦闘に勝利し、報酬としてアイテムを得ました。`);
   } else {
     addSpecialDice(player, weightedChoice([["d12", 45], ["trick", 35], ["gold", 20]]), "戦闘報酬で手に入れました");
   }
@@ -2347,6 +2558,10 @@ function placedItems(player) {
 }
 
 function occupiedCells(placed) {
+  const catalog = itemById(placed.itemId);
+  if (Array.isArray(catalog?.shape) && catalog.shape.length) {
+    return catalog.shape.map(([dx, dy]) => ({ x: placed.x + dx, y: placed.y + dy }));
+  }
   const cells = [];
   for (let y = placed.y; y < placed.y + placed.h; y += 1) {
     for (let x = placed.x; x < placed.x + placed.w; x += 1) {
@@ -2359,12 +2574,7 @@ function occupiedCells(placed) {
 function canPlace(player, stashItem, x, y, ignoreUid = null) {
   const item = itemById(stashItem.itemId);
   if (x + item.w > player.backpackW || y + item.h > player.backpackH) return false;
-  const newCells = [];
-  for (let yy = y; yy < y + item.h; yy += 1) {
-    for (let xx = x; xx < x + item.w; xx += 1) {
-      newCells.push(`${xx},${yy}`);
-    }
-  }
+  const newCells = footprintCells(item, x, y);
   const occupied = new Set(
     player.backpack
       .filter((entry) => entry.uid !== ignoreUid)
@@ -2386,8 +2596,11 @@ function selectedPlacementItem(player) {
 }
 
 function footprintCells(item, x, y) {
+  if (!item) return [];
+  if (Array.isArray(item.shape) && item.shape.length) {
+    return item.shape.map(([dx, dy]) => `${x + dx},${y + dy}`);
+  }
   const cells = [];
-  if (!item) return cells;
   for (let yy = y; yy < y + item.h; yy += 1) {
     for (let xx = x; xx < x + item.w; xx += 1) cells.push(`${xx},${yy}`);
   }
@@ -2423,10 +2636,11 @@ function renderPlacementPreview() {
 }
 
 function autoScrollDuringDrag(clientY) {
-  const edge = Math.min(120, window.innerHeight * 0.22);
+  const edge = Math.min(110, window.innerHeight * 0.2);
   let delta = 0;
-  if (clientY < edge) delta = -Math.round((edge - clientY) / 4);
-  else if (clientY > window.innerHeight - edge) delta = Math.round((clientY - (window.innerHeight - edge)) / 4);
+  if (clientY < edge) delta = -Math.ceil((edge - clientY) / 14);
+  else if (clientY > window.innerHeight - edge) delta = Math.ceil((clientY - (window.innerHeight - edge)) / 14);
+  delta = clamp(delta, -8, 8);
   if (delta) window.scrollBy({ top: delta, behavior: "auto" });
 }
 
@@ -2685,26 +2899,32 @@ async function deleteAllOnlineRooms() {
   if (!ok) return;
   try {
     await setupOnlineFirebase();
-    const { collection, getDocs, writeBatch } = online.modules;
-    const snapshot = await getDocs(collection(online.db, "sugorokuRooms"));
-    if (snapshot.empty) {
-      setOnlineStatus("削除する部屋はありません。");
-      return;
-    }
-    let batch = writeBatch(online.db);
-    let batchCount = 0;
     let deleted = 0;
-    for (const roomDoc of snapshot.docs) {
-      batch.delete(roomDoc.ref);
-      batchCount += 1;
-      deleted += 1;
-      if (batchCount >= 450) {
-        await batch.commit();
-        batch = writeBatch(online.db);
-        batchCount = 0;
+    try {
+      const { collection, getDocs, writeBatch } = online.modules;
+      const snapshot = await getDocs(collection(online.db, "sugorokuRooms"));
+      if (snapshot.empty) {
+        setOnlineStatus("削除する部屋はありません。");
+        return;
       }
+      let batch = writeBatch(online.db);
+      let batchCount = 0;
+      for (const roomDoc of snapshot.docs) {
+        batch.delete(roomDoc.ref);
+        batchCount += 1;
+        deleted += 1;
+        if (batchCount >= 450) {
+          await batch.commit();
+          batch = writeBatch(online.db);
+          batchCount = 0;
+        }
+      }
+      if (batchCount > 0) await batch.commit();
+    } catch (listError) {
+      const fallbackOk = window.confirm("部屋一覧の取得に失敗しました。4桁コードの部屋を直接すべて削除しますか？");
+      if (!fallbackOk) throw listError;
+      deleted = await deleteAllFourDigitRooms();
     }
-    if (batchCount > 0) await batch.commit();
     if (online.unsubscribe) online.unsubscribe();
     online.unsubscribe = null;
     online.enabled = false;
@@ -2718,6 +2938,26 @@ async function deleteAllOnlineRooms() {
   } catch (error) {
     setOnlineStatus(`部屋削除失敗: ${error.message}`);
   }
+}
+
+async function deleteAllFourDigitRooms() {
+  const { doc, writeBatch } = online.modules;
+  let batch = writeBatch(online.db);
+  let batchCount = 0;
+  let attempted = 0;
+  for (let index = 0; index <= 9999; index += 1) {
+    const roomId = String(index).padStart(4, "0");
+    batch.delete(doc(online.db, "sugorokuRooms", roomId));
+    batchCount += 1;
+    attempted += 1;
+    if (batchCount >= 450) {
+      await batch.commit();
+      batch = writeBatch(online.db);
+      batchCount = 0;
+    }
+  }
+  if (batchCount > 0) await batch.commit();
+  return attempted;
 }
 
 async function claimOnlineSeat() {
@@ -3335,7 +3575,7 @@ function renderBackpack() {
     const height = item.h;
     const tile = document.createElement("button");
     tile.type = "button";
-    tile.className = `placed-item-tile rare-${item.rarity}`;
+    tile.className = `placed-item-tile rare-${item.rarity} ${shapeClassForItem(item)}`;
     tile.innerHTML = `
       <span class="placed-item-icon">${itemIcons[item.id] || "🎁"}</span>
       <span class="placed-item-name">${escapeHtml(item.name)}</span>
@@ -3516,6 +3756,8 @@ function itemTimingText(item, level = 1) {
   if (item.boostAll) parts.push(`配置中、攻撃アイテム全体を${Math.round(item.boostAll * 100)}%強化`);
   if (item.weaken) parts.push(`戦闘中、相手全体の攻撃力を${Math.round(item.weaken * 100)}%低下`);
   if (item.healOnHit) parts.push(`攻撃命中時にHP${stats.healOnHit}回復`);
+  if (item.freeze) parts.push(`攻撃命中時に${(item.freeze / 1000).toFixed(1)}秒凍結`);
+  if (item.corrosion) parts.push(`攻撃命中時に${(item.corrosion / 1000).toFixed(1)}秒腐食`);
   return parts.join(" / ") || "配置中に効果発動";
 }
 
@@ -3533,6 +3775,14 @@ function renderSelectedDetail(player) {
 
 function shopCardHtml(item, extra = "") {
   return `<h3><span class="item-icon">${itemIcons[item.id] || "🎁"}</span>${escapeHtml(item.name)}</h3><p>${rarityNames[item.rarity]} / ${item.w}×${item.h}<br>${escapeHtml(item.description)}<br><span class="timing-text">${escapeHtml(itemTimingText(item))}</span>${extra}</p>`;
+}
+
+function shapeClassForItem(item) {
+  if (!Array.isArray(item.shape) || item.shape.length >= item.w * item.h) return "";
+  const keys = new Set(item.shape.map(([x, y]) => `${x},${y}`));
+  if (item.w === 2 && item.h === 2 && !keys.has("1,0")) return "shape-l-left";
+  if (item.w === 2 && item.h === 2 && !keys.has("0,1")) return "shape-l-right";
+  return "shape-custom";
 }
 
 function renderShop() {
@@ -3622,12 +3872,12 @@ function renderShop() {
     els.shopContent.append(grid);
   } else if (mode === "minigame") {
     const gameType = state.minigame?.type || "chinchiro";
-    els.shopTitle.textContent = gameType === "chinchiro" ? "チンチロ" : "ポーカー";
+    els.shopTitle.textContent = gameType === "chinchiro" ? "チンチロ" : "テキサスポーカー";
     const intro = document.createElement("div");
     intro.className = "message-box";
     intro.textContent = gameType === "chinchiro"
-      ? "賭け金を選んで3つのサイコロを振ります。ゾロ目やシゴロで大勝ち、ヒフミは大損です。"
-      : "賭け金を選んで5枚のカードで勝負します。ペア以上で配当が出ます。";
+      ? "全員で賭け金を出し合い、3つのサイコロの役が一番強いプレイヤーがポットを獲得します。"
+      : `テキサスポーカーです。共通カード: ${(state.minigame?.community || []).map(cardLabel).join(" ")} / 最強役のプレイヤーがポットを獲得します。`;
     els.shopContent.append(intro);
     const participants = minigameParticipantIds()
       .map((id) => state.players.find((entry) => entry.id === id))
@@ -3638,8 +3888,7 @@ function renderShop() {
       const result = minigameResultFor(participant.id);
       const card = document.createElement("div");
       card.className = `shop-item minigame-player-card ${result ? "done" : "waiting"}`;
-      const delta = result?.delta || 0;
-      card.innerHTML = `<h3>${escapeHtml(participant.avatar || "")} ${escapeHtml(participant.name)}</h3><p>${result ? `${escapeHtml(result.label)}<br>${delta >= 0 ? `${delta}G獲得` : `${Math.abs(delta)}G損失`}` : "参加待ち"}</p>`;
+      card.innerHTML = `<h3>${escapeHtml(participant.avatar || "")} ${escapeHtml(participant.name)}</h3><p>${result ? `${escapeHtml(result.label)}<br>賭け金 ${result.wager || 0}G` : "参加待ち"}</p>`;
       resultGrid.append(card);
     });
     els.shopContent.append(resultGrid);
@@ -3750,6 +3999,10 @@ function renderShop() {
 function renderVictoryCelebration() {
   const winner = state.players.find((player) => player.id === state.winnerId) || livingPlayers()[0] || state.players[0];
   if (!winner) return;
+  if (!victorySfxPlayed) {
+    victorySfxPlayed = true;
+    playSfx("victory");
+  }
   els.battleTimer.textContent = "完全勝利";
   const shinePieces = Array.from({ length: 18 }, (_, index) => `<span style="--i:${index}"></span>`).join("");
   els.battleArena.innerHTML = `
@@ -3760,8 +4013,38 @@ function renderVictoryCelebration() {
       <h3>勝者</h3>
       <strong>${escapeHtml(winner.name)}</strong>
       <p>死は救済すごろく、人生終了ゲームを制しました。</p>
+      <button class="primary-button life-end-button" id="endLifeButton" type="button">人生を終了する</button>
     </div>
   `;
+  document.getElementById("endLifeButton")?.addEventListener("click", endLifeAndReturnTitle);
+}
+
+function endLifeAndReturnTitle() {
+  if (online.enabled && !online.isHost) {
+    localNotice("部屋主が人生を終了するとタイトル画面に戻ります。");
+    return;
+  }
+  clearBattleLoops();
+  const nextSetupCount = online.enabled ? setupCountFromSeats(online.seats || {}) : 3;
+  state = newGameState();
+  state.setupCount = nextSetupCount;
+  selectedItem = null;
+  selectedSynthesis = [];
+  forgeMode = "upgrade";
+  placementPreview = null;
+  touchDrag = null;
+  dragSource = null;
+  lastBackpackTap = { uid: null, at: 0 };
+  suppressPlacedClick = { uid: null, until: 0 };
+  displayedBattleActionIds = new Set();
+  isAnimatingMove = false;
+  uiEffects = { space: null, happening: null };
+  victorySfxPlayed = false;
+  els.diceFace.textContent = "?";
+  if (online.enabled && online.isHost) markChanged();
+  renderSetup();
+  renderAll();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function renderBattle() {
@@ -3802,8 +4085,10 @@ function renderBattle() {
     const readyMark = state.phase === "battlePrep"
       ? `<span class="ready-mark ${battle.ready?.[player.id] ? "ready" : ""}">${battle.ready?.[player.id] ? "READY" : "WAIT"}</span>`
       : "";
+    const statusText = battleStatusText(fighter);
     row.innerHTML = `
       <div class="fighter-head"><span>${escapeHtml(player.name)} ${readyMark}</span><span>${Math.max(0, Math.round(fighter.hp))}/${hpMax} HP / 盾 ${fighter.shield}</span></div>
+      ${statusText ? `<div class="battle-status">${statusText}</div>` : ""}
       <div class="hp-bar"><span class="hp-fill" style="--hp:${hpPercent}%"></span></div>
       <div class="shield-bar"><span class="shield-fill" style="--shield:${shieldPercent}%"></span></div>
       ${targetEffect ? `<div class="battle-pop damage-pop" style="animation-delay:-${Math.min(targetEffect.elapsed, BATTLE_ACTION_EFFECT_MS)}ms">${escapeHtml(targetEffect.label)}</div>` : ""}
@@ -3821,10 +4106,18 @@ function renderBattle() {
   els.battleArena.append(feed);
 }
 
+function battleStatusText(fighter) {
+  const now = Date.now();
+  const parts = [];
+  if (Number(fighter.statuses?.freezeUntil || 0) > now) parts.push("凍結");
+  if (Number(fighter.statuses?.corrosionUntil || 0) > now) parts.push("腐食");
+  return parts.map((part) => `<span>${part}</span>`).join("");
+}
+
 function renderBattleItems(player, fighter) {
   const entries = placedItems(player).filter((entry) => {
     const item = itemById(entry.itemId);
-    return item.damage || item.poison || item.heal || item.boost || item.boostAll || item.shield || item.weaken;
+    return item.damage || item.poison || item.heal || item.boost || item.boostAll || item.shield || item.weaken || item.freeze || item.corrosion;
   });
   if (!entries.length) return `<div class="battle-item muted">装備なし</div>`;
   return entries
@@ -3849,34 +4142,6 @@ function renderLog() {
     .slice(-60)
     .map((entry) => `<div class="log-entry">${escapeHtml(entry.text)}</div>`)
     .join("");
-}
-
-function saveGame() {
-  localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-  addLog("ゲームをブラウザに保存しました。");
-}
-
-function loadGame() {
-  const saved = localStorage.getItem(SAVE_KEY);
-  if (!saved) {
-    addLog("保存データがありません。");
-    return;
-  }
-  clearBattleLoops();
-  state = normalizeGameState(JSON.parse(saved));
-  selectedItem = null;
-  addLog("保存データを読み込みました。");
-  renderAll();
-}
-
-function resetGame() {
-  clearBattleLoops();
-  state = newGameState();
-  selectedItem = null;
-  els.diceFace.textContent = "?";
-  addLog("ゲームをリセットしました。");
-  renderSetup();
-  renderAll();
 }
 
 function escapeHtml(value) {

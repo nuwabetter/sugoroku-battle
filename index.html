@@ -13,17 +13,6 @@
           <p class="eyebrow">2〜4人 / オンライン対戦</p>
           <h1>死は救済すごろく-人生終了ゲーム-</h1>
         </div>
-        <div class="top-actions">
-          <button class="icon-button" id="saveButton" type="button" title="保存">
-            <span aria-hidden="true">S</span>
-          </button>
-          <button class="icon-button" id="loadButton" type="button" title="読み込み">
-            <span aria-hidden="true">L</span>
-          </button>
-          <button class="icon-button danger" id="resetButton" type="button" title="最初から">
-            <span aria-hidden="true">R</span>
-          </button>
-        </div>
       </header>
 
       <main class="layout">
@@ -67,12 +56,13 @@
               <button class="small-button" id="leaveRoomButton" type="button">退出</button>
               <button class="small-button danger" id="deleteAllRoomsButton" type="button">部屋全削除</button>
             </div>
-            <div class="message-box" id="onlineHelp">Firebase 設定は登録済みです。部屋を作ると、他端末は同じサイトと部屋コードで参加できます。</div>
+            <div class="message-box" id="onlineHelp">部屋を作るとプレイヤー設定ができるようになります。他端末は同じサイトと部屋コードで参加できます。</div>
           </section>
 
           <section class="panel setup-panel" id="setupPanel">
             <p class="eyebrow">Game Setup</p>
             <h2>プレイヤー設定</h2>
+            <div class="message-box setup-lock-message" id="setupLockMessage">オンライン部屋を作成、または参加すると設定できます。</div>
             <div class="segmented" id="playerCountGroup" role="group" aria-label="プレイヤー人数">
               <button type="button" data-count="2">2人</button>
               <button type="button" data-count="3" class="active">3人</button>
@@ -138,6 +128,41 @@
               <div class="round-pill" id="battleTimer">待機</div>
             </div>
             <div id="battleArena" class="battle-arena"></div>
+          </section>
+
+          <section class="panel manual-panel" id="manualPanel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Guide</p>
+                <h2>説明書</h2>
+              </div>
+            </div>
+            <div class="manual-grid">
+              <div>
+                <h3>基本</h3>
+                <p>順番決定後、行動ターンのプレイヤーがダイスで進み、止まったマスの効果を受けます。誰かが人生終了マスに到達すると最終対決です。</p>
+              </div>
+              <div>
+                <h3>バックパック</h3>
+                <p>手持ちアイテムは3つまでです。アイテムはバックパックに配置すると効果を発動します。L字など特殊な形のアイテムは、その形のマスだけを使用します。</p>
+              </div>
+              <div>
+                <h3>戦闘</h3>
+                <p>攻撃・毒・回復アイテムはそれぞれの発動間隔ごとに自動発動します。3人以上の戦闘では攻撃が敵全員に適用されます。</p>
+              </div>
+              <div>
+                <h3>状態異常</h3>
+                <p>毒は防がれにくい攻撃です。凍結中はアイテムのクールタイムが進みません。腐食中は回復効果が弱まります。弱体化は相手全体の攻撃力を下げます。</p>
+              </div>
+              <div>
+                <h3>レアリティ</h3>
+                <p>コモン、アンコモン、レア、エピック、レジェンダリーの順に強力です。闇商人は高レアや特殊サイコロを扱います。</p>
+              </div>
+              <div>
+                <h3>ミニゲーム</h3>
+                <p>チンチロとテキサスポーカーは全員対戦です。全員が賭け金を出し、最も強い役のプレイヤーがポットを獲得します。</p>
+              </div>
+            </div>
           </section>
 
           <section class="panel log-panel">
