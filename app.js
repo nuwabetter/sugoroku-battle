@@ -452,11 +452,11 @@ const boardPattern = [
 ];
 
 const randomSpaceWeights = [
-  ["plus", 36],
-  ["minus", 15],
+  ["plus", 46],
+  ["minus", 7],
   ["shop", 13],
   ["sales", 16],
-  ["lucky", 9],
+  ["lucky", 15],
   ["combat", 9],
   ["forge", 12],
 ];
@@ -532,6 +532,7 @@ let online = {
   pushQueued: false,
   localDirtyUntil: 0,
   lastAppliedVersion: 0,
+  changeBaseVersion: null,
   saveTimer: null,
   modules: null,
   app: null,
@@ -760,10 +761,10 @@ function createBoardBranches(board) {
 
 function ensureMinimumSpaces(board) {
   const minimums = {
-    plus: Math.ceil(board.length * 0.26),
+    plus: Math.ceil(board.length * 0.32),
     shop: Math.max(3, Math.floor(board.length / 13)),
     sales: Math.max(3, Math.floor(board.length / 12)),
-    lucky: Math.max(2, Math.floor(board.length / 24)),
+    lucky: Math.max(3, Math.floor(board.length / 18)),
     combat: Math.max(2, Math.floor(board.length / 24)),
     forge: Math.max(2, Math.floor(board.length / 18)),
   };
@@ -1125,10 +1126,18 @@ function addLog(text) {
   renderLog();
 }
 
+function holdLocalSync(ms = 8000) {
+  if (!online.enabled) return;
+  online.localDirtyUntil = Math.max(online.localDirtyUntil || 0, Date.now() + ms);
+}
+
 function markChanged() {
   if (!online.isApplyingRemote) {
+    if (online.changeBaseVersion === null) {
+      online.changeBaseVersion = Number(online.lastAppliedVersion) || Number(state.syncVersion) || 0;
+    }
     state.syncVersion = (Number(state.syncVersion) || 0) + 1;
-    online.localDirtyUntil = Date.now() + 1600;
+    holdLocalSync();
   }
   if (!online.enabled || !online.ready || online.isApplyingRemote || !online.roomRef) return;
   if (online.isPushing) {
@@ -1147,19 +1156,45 @@ async function pushOnlineState() {
   }
   online.isPushing = true;
   online.pushQueued = false;
+  let rejectedRemoteState = null;
+  let pushedVersion = 0;
   try {
-    const { setDoc, serverTimestamp } = online.modules;
+    const { runTransaction, serverTimestamp } = online.modules;
     const snapshotState = structuredCloneForSync(state);
-    await setDoc(
-      online.roomRef,
-      {
+    const snapshotVersion = Number(snapshotState.syncVersion) || 0;
+    const baseVersion = Number(online.changeBaseVersion);
+    await runTransaction(online.db, async (transaction) => {
+      const currentSnapshot = await transaction.get(online.roomRef);
+      const currentData = currentSnapshot.exists() ? currentSnapshot.data() : {};
+      const currentVersion = Number(currentData.state?.syncVersion ?? currentData.syncVersion) || 0;
+      const currentUpdatedBy = currentData.updatedBy || "";
+      const serverMovedAfterBase = Number.isFinite(baseVersion) && currentVersion > baseVersion && currentUpdatedBy !== online.clientId;
+      const sameVersionFromOther = currentVersion === snapshotVersion && currentUpdatedBy && currentUpdatedBy !== online.clientId;
+      if (serverMovedAfterBase || sameVersionFromOther) {
+        rejectedRemoteState = currentData.state || null;
+        return;
+      }
+      transaction.set(online.roomRef, {
         state: snapshotState,
         updatedAt: serverTimestamp(),
         updatedBy: online.clientId,
         syncVersion: snapshotState.syncVersion,
-      },
-      { merge: true },
-    );
+      }, { merge: true });
+      pushedVersion = snapshotVersion;
+    });
+    if (rejectedRemoteState) {
+      online.changeBaseVersion = null;
+      online.localDirtyUntil = 0;
+      applyRemoteState(rejectedRemoteState);
+      return;
+    }
+    online.lastAppliedVersion = Math.max(Number(online.lastAppliedVersion) || 0, pushedVersion);
+    if ((Number(state.syncVersion) || 0) <= pushedVersion) {
+      online.changeBaseVersion = null;
+      online.localDirtyUntil = 0;
+    } else {
+      online.changeBaseVersion = pushedVersion;
+    }
   } catch (error) {
     setOnlineStatus(`同期失敗: ${error.message}`);
   } finally {
@@ -1523,6 +1558,7 @@ async function chooseBranchRoute(route) {
   if (!pending || state.phase !== "branchChoice") return;
   const player = state.players.find((entry) => entry.id === pending.playerId);
   if (!player || !requirePlayerControl(player)) return;
+  holdLocalSync(10000);
   const branch = activeBranches().find((entry) => entry.id === pending.branchId);
   if (!branch) return;
   state.phase = "turn";
@@ -1574,6 +1610,7 @@ async function rollMoveDice(dieUid = null, chosenRoll = null) {
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
   if (isAnimatingMove) return;
+  holdLocalSync(10000);
   playSfx("dice");
   normalizeSpecialDice(player);
   const specialDie = dieUid ? player.specialDice.find((die) => die.uid === dieUid) : null;
@@ -2845,6 +2882,9 @@ async function createOnlineRoom() {
       updatedBy: online.clientId,
       syncVersion: state.syncVersion,
     });
+    online.lastAppliedVersion = Number(state.syncVersion) || 0;
+    online.localDirtyUntil = 0;
+    online.changeBaseVersion = null;
     subscribeOnlineRoom();
     setOnlineStatus(`部屋 ${online.roomId} を作成しました。`);
     renderAll();
@@ -2888,6 +2928,9 @@ async function leaveOnlineRoom() {
   online.roomRef = null;
   online.seats = {};
   online.isHost = false;
+  online.lastAppliedVersion = 0;
+  online.localDirtyUntil = 0;
+  online.changeBaseVersion = null;
   window.clearTimeout(online.saveTimer);
   clearBattleLoops();
   setOnlineStatus("退出しました。");
@@ -2933,6 +2976,9 @@ async function deleteAllOnlineRooms() {
     online.roomRef = null;
     online.seats = {};
     online.isHost = false;
+    online.lastAppliedVersion = 0;
+    online.localDirtyUntil = 0;
+    online.changeBaseVersion = null;
     setOnlineStatus(`${deleted}件の部屋を削除しました。`);
     renderAll();
   } catch (error) {
@@ -3047,9 +3093,17 @@ function subscribeOnlineRoom() {
     if (data.state.phase === "setup") {
       data.state.setupCount = setupCountFromSeats(data.seats || {});
     }
-    if (data.updatedBy === online.clientId && state.phase !== "setup") return;
+    if (data.updatedBy === online.clientId && state.phase !== "setup") {
+      online.lastAppliedVersion = Math.max(Number(online.lastAppliedVersion) || 0, remoteVersion);
+      if (remoteVersion >= localVersion) {
+        online.changeBaseVersion = null;
+        online.localDirtyUntil = 0;
+      }
+      return;
+    }
+    if (isAnimatingMove && data.updatedBy !== online.clientId) return;
+    if (Date.now() < online.localDirtyUntil && data.updatedBy !== online.clientId) return;
     if (remoteVersion < localVersion) return;
-    if (Date.now() < online.localDirtyUntil && remoteVersion <= localVersion) return;
     applyRemoteState(data.state);
   });
 }
@@ -3060,6 +3114,7 @@ function applyRemoteState(remoteState) {
   state = normalizeGameState(remoteState);
   online.lastAppliedVersion = Number(state.syncVersion) || 0;
   online.localDirtyUntil = 0;
+  online.changeBaseVersion = null;
   selectedItem = null;
   scheduleOnlineBattleLoops();
   renderAll();
@@ -4041,6 +4096,7 @@ function endLifeAndReturnTitle() {
   uiEffects = { space: null, happening: null };
   victorySfxPlayed = false;
   els.diceFace.textContent = "?";
+  online.changeBaseVersion = Number(online.lastAppliedVersion) || 0;
   if (online.enabled && online.isHost) markChanged();
   renderSetup();
   renderAll();
