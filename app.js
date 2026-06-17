@@ -611,6 +611,7 @@ function newGameState() {
     eventCount: 0,
     battle: null,
     winnerId: null,
+    turnStarted: false,
     syncVersion: 0,
     effects: {
       itemGains: [],
@@ -946,6 +947,7 @@ function normalizeGameState(gameState) {
   }
   if (!gameState.pendingBranchChoice || typeof gameState.pendingBranchChoice !== "object") gameState.pendingBranchChoice = null;
   gameState.eventCount = Number(gameState.eventCount) || 0;
+  gameState.turnStarted = Boolean(gameState.turnStarted);
   if (!Number.isFinite(Number(gameState.nextEventTurn)) || Number(gameState.nextEventTurn) < 1) {
     gameState.nextEventTurn = 1;
   }
@@ -1131,6 +1133,31 @@ function holdLocalSync(ms = 8000) {
   online.localDirtyUntil = Math.max(online.localDirtyUntil || 0, Date.now() + ms);
 }
 
+async function refreshOnlineStateBeforeAction() {
+  if (!online.enabled || !online.ready || !online.roomRef || !online.modules?.getDoc) return true;
+  try {
+    const snapshot = await online.modules.getDoc(online.roomRef);
+    const data = snapshot.data();
+    if (!data?.state) return true;
+    if (data.state.phase === "setup") {
+      data.state.setupCount = setupCountFromSeats(data.seats || {});
+    }
+    const remoteVersion = Number(data.state.syncVersion ?? data.syncVersion) || 0;
+    const localVersion = Number(state.syncVersion) || 0;
+    online.seats = data.seats || online.seats || {};
+    online.isHost = data.hostId === online.clientId;
+    if (remoteVersion > localVersion && data.updatedBy !== online.clientId) {
+      applyRemoteState(data.state);
+      localNotice("最新の状態に更新しました。もう一度操作してください。");
+      return false;
+    }
+    online.lastAppliedVersion = Math.max(Number(online.lastAppliedVersion) || 0, remoteVersion);
+  } catch (error) {
+    setOnlineStatus(`最新状態の確認に失敗: ${error.message}`);
+  }
+  return true;
+}
+
 function markChanged() {
   if (!online.isApplyingRemote) {
     if (online.changeBaseVersion === null) {
@@ -1203,6 +1230,65 @@ async function pushOnlineState() {
       window.clearTimeout(online.saveTimer);
       online.saveTimer = window.setTimeout(pushOnlineState, 80);
     }
+  }
+}
+
+function markPlayerInventoryChanged(player) {
+  if (!player) return;
+  if (!online.enabled || !online.ready || online.isApplyingRemote || !online.roomRef) {
+    markChanged();
+    return;
+  }
+  state.syncVersion = (Number(state.syncVersion) || 0) + 1;
+  holdLocalSync(10000);
+  pushPlayerInventoryState(player.id);
+}
+
+async function pushPlayerInventoryState(playerId) {
+  if (!online.enabled || !online.ready || !online.roomRef || !online.modules?.runTransaction) return;
+  const localPlayer = state.players.find((player) => player.id === playerId);
+  if (!localPlayer) return;
+  const inventoryPatch = {
+    stash: structuredCloneForSync(localPlayer.stash || []),
+    backpack: structuredCloneForSync(localPlayer.backpack || []),
+    backpackW: localPlayer.backpackW,
+    backpackH: localPlayer.backpackH,
+    specialDice: structuredCloneForSync(localPlayer.specialDice || []),
+  };
+  try {
+    const { runTransaction, serverTimestamp } = online.modules;
+    let pushedVersion = 0;
+    let mergedState = null;
+    await runTransaction(online.db, async (transaction) => {
+      const currentSnapshot = await transaction.get(online.roomRef);
+      if (!currentSnapshot.exists()) return;
+      const currentData = currentSnapshot.data();
+      const remoteState = normalizeGameState(currentData.state || newGameState());
+      const target = remoteState.players.find((player) => player.id === playerId);
+      if (!target) return;
+      Object.assign(target, inventoryPatch);
+      remoteState.syncVersion = Math.max(Number(remoteState.syncVersion) || 0, Number(state.syncVersion) || 0) + 1;
+      pushedVersion = remoteState.syncVersion;
+      mergedState = structuredCloneForSync(remoteState);
+      transaction.set(online.roomRef, {
+        state: remoteState,
+        updatedAt: serverTimestamp(),
+        updatedBy: online.clientId,
+        syncVersion: remoteState.syncVersion,
+      }, { merge: true });
+    });
+    if (pushedVersion) {
+      if (mergedState) {
+        applyRemoteState(mergedState);
+      } else {
+        online.lastAppliedVersion = Math.max(Number(online.lastAppliedVersion) || 0, pushedVersion);
+        state.syncVersion = Math.max(Number(state.syncVersion) || 0, pushedVersion);
+        online.changeBaseVersion = null;
+        online.localDirtyUntil = 0;
+      }
+    }
+  } catch (error) {
+    setOnlineStatus(`バックパック同期失敗: ${error.message}`);
   }
 }
 
@@ -1420,6 +1506,7 @@ function startOrderPhase() {
   state.orderIndex = 0;
   state.currentIndex = 0;
   state.nextEventTurn = 1;
+  state.turnStarted = false;
   victorySfxPlayed = false;
   state.editorPlayerId = state.players[0].id;
   addLog("ゲーム開始。まずは1〜100ダイスで行動順を決めます。");
@@ -1446,7 +1533,10 @@ function rollOrderDice() {
 }
 
 function beginTurn() {
-  const player = currentPlayer();
+  state.turnStarted = false;
+}
+
+function applyTurnStartEffects(player) {
   if (!player) return;
   refreshPersonalShop(player);
   purgeOverflow(player);
@@ -1458,6 +1548,20 @@ function beginTurn() {
     player.money += income;
     addLog(`${player.name} はバックパック効果で ${income}G 得ました。`);
   }
+}
+
+async function startCurrentTurn() {
+  const player = currentPlayer();
+  if (!player || state.phase !== "turn") return;
+  if (!requirePlayerControl(player)) return;
+  if (state.turnStarted) return;
+  if (!(await refreshOnlineStateBeforeAction())) return;
+  holdLocalSync(10000);
+  state.turnStarted = true;
+  applyTurnStartEffects(player);
+  addLog(`${player.name} が行動を開始しました。`);
+  renderAll();
+  markChanged();
 }
 
 function purgeOverflow(player) {
@@ -1558,6 +1662,7 @@ async function chooseBranchRoute(route) {
   if (!pending || state.phase !== "branchChoice") return;
   const player = state.players.find((entry) => entry.id === pending.playerId);
   if (!player || !requirePlayerControl(player)) return;
+  if (!(await refreshOnlineStateBeforeAction())) return;
   holdLocalSync(10000);
   const branch = activeBranches().find((entry) => entry.id === pending.branchId);
   if (!branch) return;
@@ -1610,6 +1715,11 @@ async function rollMoveDice(dieUid = null, chosenRoll = null) {
   if (!player || state.phase !== "turn") return;
   if (!requirePlayerControl(player)) return;
   if (isAnimatingMove) return;
+  if (!state.turnStarted) {
+    localNotice("行動開始ボタンを押してからダイスを振ってください。");
+    return;
+  }
+  if (!(await refreshOnlineStateBeforeAction())) return;
   holdLocalSync(10000);
   playSfx("dice");
   normalizeSpecialDice(player);
@@ -1646,11 +1756,13 @@ function resolveSpace(player) {
   addLog(`${player.name} は「${name}」に止まりました。`);
 
   if (type === "plus") {
-    const effect = choice(["money", "item"]);
+    const effect = weightedChoice([["money", 42], ["item", 43], ["dice", 15]]);
     if (effect === "money") {
       const money = rand(25, 70);
       player.money += money;
       addLog(`${player.name} は ${money}G を得ました。`);
+    } else if (effect === "dice") {
+      addSpecialDice(player, weightedChoice([["d12", 48], ["trick", 27], ["gold", 25]]), "低コルチゾールマスで手に入れました");
     } else {
       addRandomItems(player, rand(1, 2), "white");
       addLog(`${player.name} はアイテムを得ました。`);
@@ -1674,7 +1786,7 @@ function resolveSpace(player) {
     player.branch = landedBranch;
     finishAction();
   } else if (type === "lucky") {
-    const effect = choice(["item", "dash", "discount", "dice"]);
+    const effect = weightedChoice([["item", 28], ["dash", 22], ["discount", 18], ["dice", 32]]);
     if (effect === "item") {
       addRandomItems(player, 2, "green");
       addLog(`${player.name} は幸運でアイテムを得ました。`);
@@ -2279,14 +2391,25 @@ function toggleSynthesisItem(uidValue) {
 }
 
 function openCombatChoice(player) {
+  holdLocalSync(12000);
   state.phase = "combatChoice";
   addLog(`${player.name} は戦闘相手を選びます。`);
   renderAll();
   focusPanel(els.statusPanel);
 }
 
+async function chooseCombatOpponent(opponentId) {
+  const player = currentPlayer();
+  if (!player || state.phase !== "combatChoice") return;
+  if (!requirePlayerControl(player)) return;
+  if (!(await refreshOnlineStateBeforeAction())) return;
+  holdLocalSync(12000);
+  startBattle([player.id, opponentId], false, "戦闘マス");
+}
+
 function startBattle(playerIds, isFinal, title) {
   clearBattleLoops();
+  holdLocalSync(12000);
   playSfx("battle");
   displayedBattleActionIds = new Set();
   state.phase = "battlePrep";
@@ -2550,7 +2673,7 @@ function finishBattle() {
 }
 
 function grantBattleReward(player) {
-  const reward = weightedChoice([["money", 45], ["item", 35], ["dice", 20]]);
+  const reward = weightedChoice([["money", 34], ["item", 31], ["dice", 35]]);
   if (reward === "money") {
     const amount = rand(45, 75);
     player.money += amount;
@@ -2568,7 +2691,6 @@ function grantBattleReward(player) {
 function continueAfterBattle() {
   state.battle = null;
   state.phase = "turn";
-  markChanged();
   advanceTurn();
 }
 
@@ -2727,14 +2849,14 @@ function placeSelectedItem(x, y) {
   const placed = player.backpack.find((item) => item.uid === selectedItem);
   if (placed) {
     if (!canPlace(player, placed, x, y, placed.uid)) {
-    localNotice("その場所にはアイテムを移動できません。");
+      localNotice("その場所にはアイテムを移動できません。");
+      return;
+    }
+    placed.x = x;
+    placed.y = y;
+    renderBackpack();
+    markPlayerInventoryChanged(player);
     return;
-  }
-  placed.x = x;
-  placed.y = y;
-  renderBackpack();
-  markChanged();
-  return;
   }
   const stashIndex = player.stash.findIndex((item) => item.uid === selectedItem);
   if (stashIndex < 0) return;
@@ -2754,7 +2876,7 @@ function placeSelectedItem(x, y) {
   });
   selectedItem = null;
   renderBackpack();
-  markChanged();
+  markPlayerInventoryChanged(player);
 }
 
 function removePlacedItem(uidValue) {
@@ -2769,7 +2891,7 @@ function removePlacedItem(uidValue) {
   const [item] = player.backpack.splice(index, 1);
   player.stash.push({ uid: item.uid, itemId: item.itemId, level: item.level });
   renderBackpack();
-  markChanged();
+  markPlayerInventoryChanged(player);
 }
 
 function trashSelectedItem() {
@@ -2793,7 +2915,7 @@ function trashSelectedItem() {
     player.backpack.splice(backpackIndex, 1);
     selectedItem = null;
     renderBackpack();
-    markChanged();
+    markPlayerInventoryChanged(player);
     return;
   }
   const item = player.stash[index];
@@ -2803,7 +2925,7 @@ function trashSelectedItem() {
   player.stash.splice(index, 1);
   selectedItem = null;
   renderBackpack();
-  markChanged();
+  markPlayerInventoryChanged(player);
 }
 
 function renderAll() {
@@ -3328,6 +3450,10 @@ function renderTurn() {
 
   if (state.phase === "turn") {
     els.turnTitle.textContent = `${player.name} の行動ターン`;
+    if (!state.turnStarted) {
+      els.actionArea.append(actionButton("行動開始", "primary-button", startCurrentTurn, !canControlPlayer(player) || isAnimatingMove));
+      return;
+    }
     els.actionArea.append(actionButton("1〜6ダイスを振る", "primary-button", rollMoveDice, !canControlPlayer(player) || isAnimatingMove));
     normalizeSpecialDice(player);
     player.specialDice.forEach((die) => {
@@ -3349,7 +3475,7 @@ function renderTurn() {
     const row = document.createElement("div");
     row.className = "action-row";
     opponents.forEach((opponent) => {
-      row.append(actionButton(opponent.name, "danger-button", () => startBattle([player.id, opponent.id], false, "戦闘マス"), !canControlPlayer(player)));
+      row.append(actionButton(opponent.name, "danger-button", () => chooseCombatOpponent(opponent.id), !canControlPlayer(player)));
     });
     els.actionArea.append(row);
     return;
